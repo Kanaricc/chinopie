@@ -29,13 +29,14 @@ def train(batch_size:int=16):
     optimizer=torch.optim.AdamW(model.parameters(),lr=1e-3)
 
     helper.register_dataset(trainset,trainloader,valset,valloader)
+    helper.register_test_dataset(testset,testloader)
 
     helper.register_probe('a')
 
     helper.ready_to_train()
 
-    for epochi,ptrain,pval,ptest in helper.range_epoch():
-        with ptrain as phase:
+    for epochi in helper.range_epoch():
+        with helper.phase_train() as phase:
             model.train()
             for batchi,x in phase.range_data():
                 inputs:Tensor=x['input']
@@ -53,7 +54,7 @@ def train(batch_size:int=16):
             phase.update_probe('a',1.)
             phase.end_phase(0.)
 
-        with pval as phase:
+        with helper.phase_val() as phase:
             model.eval()
             for batchi,x in phase.range_data():
                 inputs:Tensor=x['input']
@@ -67,7 +68,7 @@ def train(batch_size:int=16):
                 phase.update_loss(loss,batch_size)
             phase.update_probe('a',2.)
             phase.end_phase(0.)
-        with ptest as phase:
+        with helper.phase_test() as phase:
             model.eval()
             for batchi,x in phase.range_data():
                 inputs:Tensor=x['input']

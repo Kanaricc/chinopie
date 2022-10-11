@@ -545,7 +545,7 @@ class TrainHelper:
                 assert isinstance(self._dataloader_train.sampler, DistributedSampler)
                 self._dataloader_train.sampler.set_epoch(i)
 
-            yield i,self.phase_train(),self.phase_val(),self.phase_test()
+            yield i
 
             if self.if_need_save_checkpoint():
                 logger.error("[CHECKPOINT] checkpoint not saved")
@@ -664,7 +664,7 @@ class TrainHelper:
                     )
                     logger.info(f"[TEST CPROBES] {k}: {phase._custom_probes[k].average()}")
             logger.warning(
-                f"|| END TEST {self.cur_epoch} - {phase._loss_probe}, score {phase._score}"
+                f"|| END TEST {self.cur_epoch} - {phase._loss_probe.average()}, score {phase._score}"
             )
 
     @staticmethod
