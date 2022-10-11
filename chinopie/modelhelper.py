@@ -229,6 +229,10 @@ class TrainHelper:
         self.custom_probes = {}
         self.custom_global_params = {}
         self.is_dry_run = dry_run
+        
+        if self.is_dry_run:
+            self.enable_checkpoint=False
+            self.auto_load_checkpoint=False
 
     def _is_main_process(self):
         return self.enable_ddp == False or dist.get_rank() == 0
