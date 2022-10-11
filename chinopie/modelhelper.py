@@ -116,7 +116,6 @@ class FileHelper:
     def _is_main_process(self):
         return self.enable_ddp == False or dist.get_rank() == 0
 
-
 class TrainHelper:
     dev: str
     train_loss_probe: AverageMeter

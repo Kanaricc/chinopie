@@ -15,6 +15,16 @@ class FakeOutput(typing.TypedDict):
     input:Tensor
     target:Tensor
 
+class FakeEmptySet(Dataset):
+    def __init__(self) -> None:
+        pass
+
+    def __len__(self):
+        return 0
+    
+    def __getitem__(self, index: int):
+        raise RuntimeError("trying to fetch data from empty dataset")
+
 class FakeConstSet(Dataset):
     def __init__(self,input_like:Tensor,output_like:Tensor,size:int=128) -> None:
         self.input_like=input_like.detach().clone()
