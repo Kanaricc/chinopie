@@ -1,0 +1,6 @@
+testdeps
+__pycache__
+/*.log
+/*.zip
+*.ipynb
+/exp
