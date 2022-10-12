@@ -1,35 +1,69 @@
+from torch import Tensor
+import torch
 from torch.types import Number
 
+class DistributionMeter:
+    def __init__(self,name: str) -> None:
+        self._max=None
+        self._min=None
+        self._sum=None
+        self._cnt=0
+    
+    def update(self, val:Tensor):
+        if self._max==None:
+            self._max=val
+        if self._min==None:
+            self._min=val
+        if self._sum==None:
+            self._sum=torch.zeros_like(val,dtype=torch.float)
+        
+        self._max=torch.max(self._max,val)
+        self._max=torch.min(self._min,val)
+        self._sum+=val
+        self._cnt+=1
+    
+    @property
+    def max(self):
+        assert self._max!=None
+        return self._max
+    @property
+    def min(self):
+        assert self._min!=None
+        return self._min
+    @property
+    def avg(self):
+        assert self._sum!=None
+        return self._sum/self._cnt
 
 class AverageMeter:
     def __init__(self, name: str) -> None:
         self.name = name
-        self.val = 0
-        self.sum = 0
-        self.cnt = 0
-        self.avg=0
+        self._val = 0
+        self._sum = 0
+        self._cnt = 0
+        self._avg=0
         pass
 
     def update(self, val: Number, n=1):
-        self.val = val
-        self.sum += val*n
-        self.cnt += n
-        self.avg = self.sum/self.cnt
+        self._val = val
+        self._sum += val*n
+        self._cnt += n
+        self._avg = self._sum/self._cnt
     
     def has_data(self):
-        return self.cnt!=0
+        return self._cnt!=0
 
     def average(self) -> float:
-        return self.avg
+        return self._avg
 
     def value(self) -> Number:
-        return self.val
+        return self._val
     
     def reset(self):
-        self.val=0
-        self.sum=0
-        self.cnt=0
-        self.avg=0
+        self._val=0
+        self._sum=0
+        self._cnt=0
+        self._avg=0
         
     def __str__(self) -> str:
         return f"{self.name}: {self.value():.5f}(avg {self.average():.5f})"
