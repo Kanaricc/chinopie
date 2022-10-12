@@ -321,8 +321,6 @@ class TrainHelper:
             enable_ddp=False,
             dry_run: bool = False,
     ) -> None:
-        self._recoverd_epoch = None
-
         logger.warning("[HELPER] details for this run")
         logger.warning(details)
 
@@ -658,7 +656,7 @@ class TrainHelper:
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
-            for k in self.custom_probes:
+            for k in self._custom_probes:
                 if phase.custom_probes[k].has_data():
                     self.tbwriter.add_scalar(
                         f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
@@ -688,7 +686,7 @@ class TrainHelper:
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
-            for k in self.custom_probes:
+            for k in self._custom_probes:
                 if phase.custom_probes[k].has_data():
                     self.tbwriter.add_scalar(
                         f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
