@@ -608,14 +608,14 @@ class TrainHelper:
                     self.tbwriter.add_scalar(
                         f"{k}/train", phase._custom_probes[k].average(), self.cur_epoch
                     )
-                    logger.info(f"[TRAIN CPROBES] {k}: {phase._custom_probes[k].average()}")
+                    logger.info(f"[TRAIN_CPROBES] {k}: {phase._custom_probes[k].average()}")
         if not self._ddp_session:
             logger.warning(
-                f"|| END TRAIN {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
+                f"|| END_TRAIN {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
             )
         else:
             logger.warning(
-                f"|| RANK {dist.get_rank()} END TRAIN {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
+                f"|| RANK {dist.get_rank()} END_TRAIN {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
             )
 
             
@@ -634,10 +634,10 @@ class TrainHelper:
                     self.tbwriter.add_scalar(
                         f"{k}/train", phase._custom_probes[k].average(), self.cur_epoch
                     )
-                    logger.info(f"[VAL CPROBES] {k}: {phase._custom_probes[k].average()}")
+                    logger.info(f"[VAL_CPROBES] {k}: {phase._custom_probes[k].average()}")
         
             logger.warning(
-                f"|| END VAL {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
+                f"|| END_VAL {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
             )
 
         if phase._score >= self._best_val_score:
@@ -662,9 +662,9 @@ class TrainHelper:
                     self.tbwriter.add_scalar(
                         f"{k}/train", phase._custom_probes[k].average(), self.cur_epoch
                     )
-                    logger.info(f"[TEST CPROBES] {k}: {phase._custom_probes[k].average()}")
+                    logger.info(f"[TEST_CPROBES] {k}: {phase._custom_probes[k].average()}")
             logger.warning(
-                f"|| END TEST {self.cur_epoch} - {phase._loss_probe.average()}, score {phase._score}"
+                f"|| END_TEST {self.cur_epoch} - {phase._loss_probe.average()}, score {phase._score}"
             )
 
     @staticmethod
