@@ -263,7 +263,7 @@ class PhaseHelper:
         self._score = score
 
     def _is_main_process(self):
-        return self._ddp_session != None and self._ddp_session.is_main_process()
+        return self._ddp_session == None or self._ddp_session.is_main_process()
 
 
 class TrainHelper:
