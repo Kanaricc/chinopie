@@ -30,13 +30,17 @@ DIR_TENSORBOARD = "boards"
 
 
 class DdpSession:
-    def is_main_process(self):
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def is_main_process():
         return dist.get_rank() == 0
 
 
 class FileHelper:
     def __init__(
-        self, disk_root: str, comment: str, ddp_session: Optional[DdpSession] = None
+            self, disk_root: str, comment: str, ddp_session: Optional[DdpSession] = None
     ):
         self.disk_root = disk_root
         self.ddp_session = ddp_session
@@ -108,7 +112,6 @@ class FileHelper:
         if not self._is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
         filename = f"checkpoint-{cur_epoch}.pth"
-        self._trigger_checkpoint = False
         return os.path.join(self.cp_dir, filename)
 
     def get_dataset_slot(self, dataset_id: str) -> str:
@@ -117,14 +120,13 @@ class FileHelper:
     def get_best_checkpoint_slot(self) -> str:
         if not self._is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
-        self._trigger_best_score = False
         return os.path.join(self.cp_dir, "best.pth")
 
     def get_default_board_dir(self) -> str:
         return self.board_dir
 
     def _is_main_process(self):
-        return self.ddp_session == None or self.ddp_session.is_main_process()
+        return self.ddp_session is None or self.ddp_session.is_main_process()
 
 
 class PhaseHelper:
@@ -149,16 +151,17 @@ class PhaseHelper:
     _break_phase: bool
 
     def __init__(
-        self,
-        phase_name: str,
-        dataset: Any,
-        dataloader: DataLoader,
-        ddp_session: Optional[DdpSession] = None,
-        dry_run: bool = False,
-        custom_probes: List[str] = [],
-        exit_callback: Callable[[Self], None] = lambda Self: None,
-        break_phase: bool = False,
+            self,
+            phase_name: str,
+            dataset: Any,
+            dataloader: DataLoader,
+            ddp_session: Optional[DdpSession] = None,
+            dry_run: bool = False,
+            custom_probes: List[str] = [],
+            exit_callback: Callable[[Self], None] = lambda x: None,
+            break_phase: bool = False,
     ) -> None:
+        self._output_updated = True
         self._phase_name = phase_name
         self._dry_run = dry_run
         self._ddp_session = ddp_session
@@ -228,7 +231,8 @@ class PhaseHelper:
             self._custom_probe_name.remove(name)
         self._custom_probes[name].update(value, n)
 
-    def validate_loss(self, loss: Tensor, panic: bool = True) -> bool:
+    @staticmethod
+    def validate_loss(loss: Tensor, panic: bool = True) -> bool:
         hasnan = loss.isnan().any().item()
         hasinf = loss.isinf().any().item()
         hasneg = (loss < 0).any().item()
@@ -238,7 +242,8 @@ class PhaseHelper:
             assert not hasneg, f"loss function returns negative value: {loss}"
         return not hasnan and not hasinf and not hasneg
 
-    def validate_tensor(self, t: Tensor, panic: bool = True, msg: str = "") -> bool:
+    @staticmethod
+    def validate_tensor(t: Tensor, panic: bool = True, msg: str = "") -> bool:
         hasnan = t.isnan().any().item()
         hasinf = t.isinf().any().item()
 
@@ -254,7 +259,6 @@ class PhaseHelper:
         self._loss_probe.update(loss.item(), n)
 
     def update_output(self, *outputs):
-        self._output_updated = True
         for k, v in enumerate(outputs):
             assert type(v) == Tensor
             self.validate_tensor(v)
@@ -269,7 +273,19 @@ class PhaseHelper:
         self._score = score
 
     def _is_main_process(self):
-        return self._ddp_session == None or self._ddp_session.is_main_process()
+        return self._ddp_session is None or self._ddp_session.is_main_process()
+
+    @property
+    def loss_probe(self):
+        return self._loss_probe
+
+    @property
+    def score(self):
+        return self._score
+
+    @property
+    def custom_probes(self):
+        return self._custom_probes
 
 
 class TrainHelper:
@@ -292,19 +308,21 @@ class TrainHelper:
     _trigger_run_test: bool
 
     def __init__(
-        self,
-        disk_root: str,
-        epoch_num: int,
-        batch_size: int,
-        load_checkpoint: bool,
-        enable_checkpoint: bool,
-        checkpoint_save_period: Optional[int],
-        comment: str,
-        details: Optional[str] = None,
-        dev: str = "",
-        enable_ddp=False,
-        dry_run: bool = False,
+            self,
+            disk_root: str,
+            epoch_num: int,
+            batch_size: int,
+            load_checkpoint: bool,
+            enable_checkpoint: bool,
+            checkpoint_save_period: Optional[int],
+            comment: str,
+            details: Optional[str] = None,
+            dev: str = "",
+            enable_ddp=False,
+            dry_run: bool = False,
     ) -> None:
+        self._recoverd_epoch = None
+
         logger.warning("[HELPER] details for this run")
         logger.warning(details)
 
@@ -312,7 +330,7 @@ class TrainHelper:
         self._batch_size = batch_size
         self._load_checkpoint = load_checkpoint
         self._enable_checkpoint = enable_checkpoint
-        if checkpoint_save_period != None:
+        if checkpoint_save_period is not None:
             self._checkpoint_save_period = checkpoint_save_period
         else:
             self._checkpoint_save_period = 1
@@ -381,7 +399,7 @@ class TrainHelper:
             self._load_checkpoint = False
 
     def _is_main_process(self):
-        return self._ddp_session == None or self._ddp_session.is_main_process()
+        return self._ddp_session is None or self._ddp_session.is_main_process()
 
     def if_need_load_checkpoint(self):
         return self._load_checkpoint
@@ -424,7 +442,7 @@ class TrainHelper:
         self._custom_global_params[name] = value
 
     def register_dataset(
-        self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
+            self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
     ):
         self._data_train = train
         self._dataloader_train = trainloader
@@ -432,10 +450,10 @@ class TrainHelper:
         self._dataloader_val = valloader
 
         assert (
-            self._dataloader_train.batch_size == self._batch_size
+                self._dataloader_train.batch_size == self._batch_size
         ), f"batch size of dataloader_train does not match"
         assert (
-            self._dataloader_val.batch_size == self._batch_size
+                self._dataloader_val.batch_size == self._batch_size
         ), f"batch size of dataloader_val does not match"
 
         if self._ddp_session:
@@ -447,7 +465,7 @@ class TrainHelper:
         self._dataloader_test = testloader
 
         assert (
-            self._dataloader_test.batch_size == self._batch_size
+                self._dataloader_test.batch_size == self._batch_size
         ), f"batch size of dataloader_test does not match"
 
         if self._ddp_session:
@@ -466,7 +484,7 @@ class TrainHelper:
             np.random.seed(seed)
         else:
             logger.warning(
-                f"[DDP] fixed seed `{seed+dist.get_rank()}` is set for this process"
+                f"[DDP] fixed seed `{seed + dist.get_rank()}` is set for this process"
             )
             os.environ["PYTHONHASHSEED"] = str(seed + dist.get_rank())
             random.seed(seed + dist.get_rank())
@@ -486,10 +504,10 @@ class TrainHelper:
 
     def ready_to_train(self):
         if (
-            not hasattr(self, "_data_train")
-            or not hasattr(self, "_data_val")
-            or not hasattr(self, "_dataloader_train")
-            or not hasattr(self, "_dataloader_val")
+                not hasattr(self, "_data_train")
+                or not hasattr(self, "_data_val")
+                or not hasattr(self, "_dataloader_train")
+                or not hasattr(self, "_dataloader_val")
         ):
             logger.error("[DATASET] dataset not set")
             raise RuntimeError("dataset not set")
@@ -518,7 +536,7 @@ class TrainHelper:
         logger.warning(f"[PARAMS] device: {self.dev}")
         logger.warning(f"[PARAMS] epoch num: {self._epoch_num}")
         logger.warning(
-            f"[PARAMS] dataset: train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self,'_data_test') else 'not set'})"
+            f"[PARAMS] dataset: train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self, '_data_test') else 'not set'})"
         )
         logger.warning(f"[PARAMS] board dir: {self._board_dir}")
         logger.warning(f"[PARAMS] checkpoint load: {self._load_checkpoint}")
@@ -536,8 +554,8 @@ class TrainHelper:
 
             # begin of epoch
             self._trigger_checkpoint = (
-                self._enable_checkpoint
-                and self.cur_epoch % self._checkpoint_save_period == 0
+                    self._enable_checkpoint
+                    and self.cur_epoch % self._checkpoint_save_period == 0
             )
 
             if not self._ddp_session:
@@ -607,54 +625,54 @@ class TrainHelper:
         if self._is_main_process():
             # assume training loss is sync by user
             self.tbwriter.add_scalar(
-                "loss/train", phase._loss_probe.average(), self.cur_epoch
+                "loss/train", phase.loss_probe.average(), self.cur_epoch
             )
-            self.tbwriter.add_scalar("score/train", phase._score, self.cur_epoch)
+            self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
             for k in self._custom_probes:
-                if phase._custom_probes[k].has_data():
+                if phase.custom_probes[k].has_data():
                     self.tbwriter.add_scalar(
-                        f"{k}/train", phase._custom_probes[k].average(), self.cur_epoch
+                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
                     )
                     logger.info(
-                        f"[TRAIN_CPROBES] {k}: {phase._custom_probes[k].average()}"
+                        f"[TRAIN_CPROBES] {k}: {phase.custom_probes[k].average()}"
                     )
         if not self._ddp_session:
             logger.warning(
-                f"|| END_TRAIN {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
+                f"|| END_TRAIN {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
             )
         else:
             logger.warning(
-                f"|| RANK {dist.get_rank()} END_TRAIN {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
+                f"|| RANK {dist.get_rank()} END_TRAIN {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
             )
 
     def end_val(self, phase: PhaseHelper):
         if self._is_main_process():
             # validation phase is full and run duplicated on every processes, including main process
             self.tbwriter.add_scalar(
-                "loss/val", phase._loss_probe.average(), self.cur_epoch
+                "loss/val", phase.loss_probe.average(), self.cur_epoch
             )
-            self.tbwriter.add_scalar("score/val", phase._score, self.cur_epoch)
+            self.tbwriter.add_scalar("score/val", phase.score, self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
-            for k in self._custom_probes:
-                if phase._custom_probes[k].has_data():
+            for k in self.custom_probes:
+                if phase.custom_probes[k].has_data():
                     self.tbwriter.add_scalar(
-                        f"{k}/train", phase._custom_probes[k].average(), self.cur_epoch
+                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
                     )
                     logger.info(
-                        f"[VAL_CPROBES] {k}: {phase._custom_probes[k].average()}"
+                        f"[VAL_CPROBES] {k}: {phase.custom_probes[k].average()}"
                     )
 
             logger.warning(
-                f"|| END_VAL {self.cur_epoch} - loss {phase._loss_probe.average()}, score {phase._score}"
+                f"|| END_VAL {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
             )
 
-        if phase._score >= self._best_val_score:
-            self._best_val_score = phase._score
+        if phase.score >= self._best_val_score:
+            self._best_val_score = phase.score
             self._trigger_run_test = True
             # TODO: this ?
             if self._enable_checkpoint:
@@ -664,22 +682,22 @@ class TrainHelper:
     def end_test(self, phase: PhaseHelper):
         if self._is_main_process():
             self.tbwriter.add_scalar(
-                "loss/test", phase._loss_probe.average(), self.cur_epoch
+                "loss/test", phase.loss_probe.average(), self.cur_epoch
             )
-            self.tbwriter.add_scalar("score/test", phase._score, self.cur_epoch)
+            self.tbwriter.add_scalar("score/test", phase.score, self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
-            for k in self._custom_probes:
-                if phase._custom_probes[k].has_data():
+            for k in self.custom_probes:
+                if phase.custom_probes[k].has_data():
                     self.tbwriter.add_scalar(
-                        f"{k}/train", phase._custom_probes[k].average(), self.cur_epoch
+                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
                     )
                     logger.info(
-                        f"[TEST_CPROBES] {k}: {phase._custom_probes[k].average()}"
+                        f"[TEST_CPROBES] {k}: {phase.custom_probes[k].average()}"
                     )
             logger.warning(
-                f"|| END_TEST {self.cur_epoch} - {phase._loss_probe.average()}, score {phase._score}"
+                f"|| END_TEST {self.cur_epoch} - {phase.loss_probe.average()}, score {phase.score}"
             )
 
     @staticmethod
@@ -709,7 +727,7 @@ class TrainHelper:
                 logger.warning(f"[CPARAMS] {param_name}: {env_input} (changed)")
             else:
                 assert (
-                    param.default != inspect.Parameter.empty
+                        param.default != inspect.Parameter.empty
                 ), f"you did not set parameter `{param_name}`"
                 active_results[param_name] = param.default
                 logger.warning(f"[CPARAMS] {param_name}: {param.default}")
