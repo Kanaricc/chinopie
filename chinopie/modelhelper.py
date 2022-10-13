@@ -259,6 +259,7 @@ class PhaseHelper:
         self._loss_probe.update(loss.item(), n)
 
     def update_output(self, *outputs):
+        self._output_updated=True
         for k, v in enumerate(outputs):
             assert type(v) == Tensor
             self.validate_tensor(v)
