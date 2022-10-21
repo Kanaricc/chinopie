@@ -660,7 +660,7 @@ class TrainHelper:
             for k in self._custom_probes:
                 if phase.custom_probes[k].has_data():
                     self.tbwriter.add_scalar(
-                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
+                        f"{k}/val", phase.custom_probes[k].average(), self.cur_epoch
                     )
                     logger.info(
                         f"[VAL_CPROBES] {k}: {phase.custom_probes[k].average()}"
