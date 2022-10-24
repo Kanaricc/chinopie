@@ -630,7 +630,9 @@ class TrainHelper:
 
             # FIXME: this is buggy under DDP
             for k,v in enumerate(phase._output_dist_probes):
-                self.tbwriter.add_scalars(f"outdist/train/{k}",{'min':v.min,'max':v.max,'avg':v.avg},self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/train/{k}-min",v.min,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/train/{k}-max",v.max,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/train/{k}-avg",v.avg,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -661,7 +663,9 @@ class TrainHelper:
 
             # FIXME: this is buggy under DDP
             for k,v in enumerate(phase._output_dist_probes):
-                self.tbwriter.add_scalars(f"outdist/val/{k}",{'min':v.min,'max':v.max,'avg':v.avg},self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/val/{k}-min",v.min,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/val/{k}-max",v.max,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/val/{k}-avg",v.avg,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -695,7 +699,9 @@ class TrainHelper:
 
             # FIXME: this is buggy under DDP
             for k,v in enumerate(phase._output_dist_probes):
-                self.tbwriter.add_scalars(f"outdist/test/{k}",{'min':v.min,'max':v.max,'avg':v.avg},self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/test/{k}-min",v.min,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/test/{k}-max",v.max,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/test/{k}-avg",v.avg,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
