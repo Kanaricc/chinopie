@@ -628,6 +628,10 @@ class TrainHelper:
             )
             self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
 
+            # FIXME: this is buggy under DDP
+            for k,v in enumerate(phase._output_dist_probes):
+                self.tbwriter.add_scalars(f"outdist/train/{k}",{'min':v.min,'max':v.max,'avg':v.avg},self.cur_epoch)
+
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
             for k in self._custom_probes:
@@ -654,6 +658,10 @@ class TrainHelper:
                 "loss/val", phase.loss_probe.average(), self.cur_epoch
             )
             self.tbwriter.add_scalar("score/val", phase.score, self.cur_epoch)
+
+            # FIXME: this is buggy under DDP
+            for k,v in enumerate(phase._output_dist_probes):
+                self.tbwriter.add_scalars(f"outdist/val/{k}",{'min':v.min,'max':v.max,'avg':v.avg},self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -684,6 +692,10 @@ class TrainHelper:
                 "loss/test", phase.loss_probe.average(), self.cur_epoch
             )
             self.tbwriter.add_scalar("score/test", phase.score, self.cur_epoch)
+
+            # FIXME: this is buggy under DDP
+            for k,v in enumerate(phase._output_dist_probes):
+                self.tbwriter.add_scalars(f"outdist/test/{k}",{'min':v.min,'max':v.max,'avg':v.avg},self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
