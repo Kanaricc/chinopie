@@ -4,6 +4,7 @@ from torch.types import Number
 
 class DistributionMeter:
     def __init__(self,name: str) -> None:
+        self._name=name
         self._max=None
         self._min=None
         self._sum=None
@@ -18,21 +19,21 @@ class DistributionMeter:
             self._sum=torch.zeros_like(val,dtype=torch.float)
         
         self._max=torch.max(self._max,val)
-        self._max=torch.min(self._min,val)
+        self._min=torch.min(self._min,val)
         self._sum+=val
         self._cnt+=1
     
     @property
     def max(self):
-        assert self._max!=None
+        assert self._max!=None, f"{self._name} is not updated: {self._max}"
         return self._max
     @property
     def min(self):
-        assert self._min!=None
+        assert self._min!=None, f"{self._name} is not updated: {self._min}"
         return self._min
     @property
     def avg(self):
-        assert self._sum!=None
+        assert self._sum!=None, f"{self._name} is not updated: {self._sum}"
         return self._sum/self._cnt
 
 class AverageMeter:

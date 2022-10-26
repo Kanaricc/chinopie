@@ -188,12 +188,12 @@ class PhaseHelper:
                 for batchi, data in enumerate(self._dataloader):
                     yield batchi, data
                     progressbar.update()
-                    if self._dry_run:
+                    if self._dry_run and batchi>=2:
                         break
         else:
             for batchi, data in enumerate(self._dataloader):
                 yield batchi, data
-                if self._dry_run:
+                if self._dry_run and batchi>=2:
                     break
 
     def __enter__(self):
@@ -263,10 +263,10 @@ class PhaseHelper:
         for k, v in enumerate(outputs):
             assert type(v) == Tensor
             self.validate_tensor(v)
-            if len(self._output_dist_probes) - 1 <= k:
-                self._output_dist_probes.append(DistributionMeter(f"k"))
+            if len(self._output_dist_probes) - 1 < k:
+                self._output_dist_probes.append(DistributionMeter(f"{k}"))
 
-            self._output_dist_probes[k].update(v)
+            self._output_dist_probes[k].update(v.cpu().detach())
 
     def end_phase(self, score: float):
         self._score_updated = True
