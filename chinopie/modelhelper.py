@@ -621,6 +621,17 @@ class TrainHelper:
         )
 
     def end_train(self, phase: PhaseHelper):
+        if self._ddp_session is None:
+            output_dist_probes=phase._output_dist_probes
+        else:
+            gathered_output_dist_probes:List[List[NumericMeter]]=[]
+            dist.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
+            output_dist_probes=gathered_output_dist_probes[0]
+            for i in gathered_output_dist_probes[1:]:
+                for dst,src in zip(output_dist_probes,i):
+                    dst.update(src.val)
+            del gathered_output_dist_probes
+        
         if self._is_main_process():
             # assume training loss is sync by user
             self.tbwriter.add_scalar(
@@ -628,8 +639,7 @@ class TrainHelper:
             )
             self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
 
-            # FIXME: this is buggy under DDP
-            for k,v in enumerate(phase._output_dist_probes):
+            for k,v in enumerate(output_dist_probes):
                 self.tbwriter.add_histogram(f"outdist/train/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
@@ -652,6 +662,17 @@ class TrainHelper:
             )
 
     def end_val(self, phase: PhaseHelper):
+        if self._ddp_session is None:
+            output_dist_probes=phase._output_dist_probes
+        else:
+            gathered_output_dist_probes:List[List[NumericMeter]]=[]
+            dist.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
+            output_dist_probes=gathered_output_dist_probes[0]
+            for i in gathered_output_dist_probes[1:]:
+                for dst,src in zip(output_dist_probes,i):
+                    dst.update(src.val)
+            del gathered_output_dist_probes
+
         if self._is_main_process():
             # validation phase is full and run duplicated on every processes, including main process
             self.tbwriter.add_scalar(
@@ -659,8 +680,7 @@ class TrainHelper:
             )
             self.tbwriter.add_scalar("score/val", phase.score, self.cur_epoch)
 
-            # FIXME: this is buggy under DDP
-            for k,v in enumerate(phase._output_dist_probes):
+            for k,v in enumerate(output_dist_probes):
                 self.tbwriter.add_histogram(f"outdist/val/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
@@ -687,14 +707,24 @@ class TrainHelper:
                 self._trigger_state_save = True
 
     def end_test(self, phase: PhaseHelper):
+        if self._ddp_session is None:
+            output_dist_probes=phase._output_dist_probes
+        else:
+            gathered_output_dist_probes:List[List[NumericMeter]]=[]
+            dist.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
+            output_dist_probes=gathered_output_dist_probes[0]
+            for i in gathered_output_dist_probes[1:]:
+                for dst,src in zip(output_dist_probes,i):
+                    dst.update(src.val)
+            del gathered_output_dist_probes
+
         if self._is_main_process():
             self.tbwriter.add_scalar(
                 "loss/test", phase.loss_probe.average(), self.cur_epoch
             )
             self.tbwriter.add_scalar("score/test", phase.score, self.cur_epoch)
 
-            # FIXME: this is buggy under DDP
-            for k,v in enumerate(phase._output_dist_probes):
+            for k,v in enumerate(output_dist_probes):
                 self.tbwriter.add_histogram(f"outdist/test/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
