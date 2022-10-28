@@ -652,6 +652,9 @@ class TrainHelper:
                     logger.info(
                         f"[TRAIN_CPROBES] {k}: {phase.custom_probes[k].average()}"
                     )
+        
+        self._last_test_score=phase.score
+        self._last_test_loss=phase.loss_probe.average()
         if not self._ddp_session:
             logger.warning(
                 f"|| END_TRAIN {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
@@ -696,6 +699,9 @@ class TrainHelper:
 
             logger.warning(
                 f"|| END_VAL {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
+            )
+            logger.warning(
+                f"||| END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_test_loss}/{phase.loss_probe.average()}, score {self._last_test_score}/{phase.score} |||"
             )
 
         if phase.score >= self._best_val_score:
