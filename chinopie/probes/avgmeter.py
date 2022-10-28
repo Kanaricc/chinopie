@@ -2,39 +2,17 @@ from torch import Tensor
 import torch
 from torch.types import Number
 
-class DistributionMeter:
+class NumericMeter:
     def __init__(self,name: str) -> None:
         self._name=name
-        self._max=None
-        self._min=None
-        self._sum=None
-        self._cnt=0
+        self._list=torch.zeros(0)
     
     def update(self, val:Tensor):
-        if self._max==None:
-            self._max=val
-        if self._min==None:
-            self._min=val
-        if self._sum==None:
-            self._sum=torch.zeros_like(val,dtype=torch.float)
-        
-        self._max=torch.max(self._max,val)
-        self._min=torch.min(self._min,val)
-        self._sum+=val
-        self._cnt+=1
+        self._list=torch.cat([self._list,val.detach().cpu().flatten()])
     
     @property
-    def max(self):
-        assert self._max!=None, f"{self._name} is not updated: {self._max}"
-        return self._max
-    @property
-    def min(self):
-        assert self._min!=None, f"{self._name} is not updated: {self._min}"
-        return self._min
-    @property
-    def avg(self):
-        assert self._sum!=None, f"{self._name} is not updated: {self._sum}"
-        return self._sum/self._cnt
+    def val(self):
+        return self._list
 
 class AverageMeter:
     def __init__(self, name: str) -> None:

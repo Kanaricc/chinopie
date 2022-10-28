@@ -16,7 +16,7 @@ from datetime import datetime
 
 from loguru import logger
 
-from .probes.avgmeter import AverageMeter, DistributionMeter
+from .probes.avgmeter import AverageMeter, NumericMeter
 from .datasets.fakeset import FakeEmptySet
 
 from tqdm import tqdm
@@ -135,7 +135,7 @@ class PhaseHelper:
 
     _phase_name: str
     _loss_probe: AverageMeter
-    _output_dist_probes: List[DistributionMeter]
+    _output_dist_probes: List[NumericMeter]
     _custom_probe_name: List[str]
     _custom_probes: Dict[str, AverageMeter]
     _dataset: Any
@@ -264,7 +264,7 @@ class PhaseHelper:
             assert type(v) == Tensor
             self.validate_tensor(v)
             if len(self._output_dist_probes) - 1 < k:
-                self._output_dist_probes.append(DistributionMeter(f"{k}"))
+                self._output_dist_probes.append(NumericMeter(f"{k}"))
 
             self._output_dist_probes[k].update(v.cpu().detach())
 
@@ -630,9 +630,7 @@ class TrainHelper:
 
             # FIXME: this is buggy under DDP
             for k,v in enumerate(phase._output_dist_probes):
-                self.tbwriter.add_histogram(f"outdist/train/{k}-min",v.min,self.cur_epoch)
-                self.tbwriter.add_histogram(f"outdist/train/{k}-max",v.max,self.cur_epoch)
-                self.tbwriter.add_histogram(f"outdist/train/{k}-avg",v.avg,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/train/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -663,9 +661,7 @@ class TrainHelper:
 
             # FIXME: this is buggy under DDP
             for k,v in enumerate(phase._output_dist_probes):
-                self.tbwriter.add_histogram(f"outdist/val/{k}-min",v.min,self.cur_epoch)
-                self.tbwriter.add_histogram(f"outdist/val/{k}-max",v.max,self.cur_epoch)
-                self.tbwriter.add_histogram(f"outdist/val/{k}-avg",v.avg,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/val/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -699,9 +695,7 @@ class TrainHelper:
 
             # FIXME: this is buggy under DDP
             for k,v in enumerate(phase._output_dist_probes):
-                self.tbwriter.add_histogram(f"outdist/test/{k}-min",v.min,self.cur_epoch)
-                self.tbwriter.add_histogram(f"outdist/test/{k}-max",v.max,self.cur_epoch)
-                self.tbwriter.add_histogram(f"outdist/test/{k}-avg",v.avg,self.cur_epoch)
+                self.tbwriter.add_histogram(f"outdist/test/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
