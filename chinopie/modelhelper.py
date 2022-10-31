@@ -396,6 +396,7 @@ class TrainHelper:
         if self._dry_run:
             self._enable_checkpoint = False
             self._load_checkpoint = False
+            torch.autograd.anomaly_mode.set_detect_anomaly(True)
 
     def _is_main_process(self):
         return self._ddp_session is None or self._ddp_session.is_main_process()
