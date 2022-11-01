@@ -116,6 +116,9 @@ class FileHelper:
 
     def get_dataset_slot(self, dataset_id: str) -> str:
         return os.path.join(self.disk_root, DIR_DATASET, dataset_id)
+    
+    def get_state_slot(self,name:str)->str:
+        return os.path.join(self.disk_root,DIR_STATE_DICT,name)
 
     def get_best_checkpoint_slot(self) -> str:
         if not self._is_main_process():
