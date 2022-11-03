@@ -187,7 +187,7 @@ class PhaseHelper:
 
         batch_len = len(self._dataloader)
         if self._is_main_process():
-            with tqdm(total=batch_len) as progressbar:
+            with tqdm(total=batch_len,ncols=64) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     yield batchi, data
                     progressbar.update()
