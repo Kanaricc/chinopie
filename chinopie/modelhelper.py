@@ -23,6 +23,8 @@ from tqdm import tqdm
 
 from torch.utils.data.distributed import DistributedSampler
 
+LOGGER_FORMAT='<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
+
 DIR_STATE_DICT = "state"
 DIR_CHECKPOINTS = "checkpoints"
 DIR_DATASET = "data"
@@ -358,8 +360,8 @@ class TrainHelper:
 
             # logger file
             logger.remove()
-            logger.add(sys.stderr, level="WARNING")
-            logger.add(f"log-{dist.get_rank()}.log")
+            logger.add(sys.stderr, level="WARNING",format=LOGGER_FORMAT)
+            logger.add(f"log-{dist.get_rank()}.log",format=LOGGER_FORMAT)
 
             logger.warning(f"[DDP] ddp is enabled. current rank is {dist.get_rank()}.")
             logger.warning(
@@ -378,8 +380,8 @@ class TrainHelper:
         else:
             # logger file
             logger.remove()
-            logger.add(sys.stderr, level="WARNING")
-            logger.add(f"log.log")
+            logger.add(sys.stderr, level="WARNING",format=LOGGER_FORMAT)
+            logger.add(f"log.log",format=LOGGER_FORMAT)
 
             if dev == "":
                 if torch.cuda.is_available():
@@ -753,7 +755,9 @@ class TrainHelper:
 
     @staticmethod
     def auto_bind_and_run(func):
-        temp = logger.add(f"log.log")
+        logger.remove()
+        logger.add(sys.stderr,format=LOGGER_FORMAT)
+        temp = logger.add(f"log.log",format=LOGGER_FORMAT)
 
         sig = inspect.signature(func)
         params = sig.parameters
