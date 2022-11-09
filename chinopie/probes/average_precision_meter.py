@@ -21,7 +21,7 @@ class AveragePrecisionMeter:
     each sample.
     """
 
-    def __init__(self, difficult_examples=True):
+    def __init__(self, difficult_examples=False):
         super(AveragePrecisionMeter, self).__init__()
         self.reset()
         self.difficult_examples = difficult_examples

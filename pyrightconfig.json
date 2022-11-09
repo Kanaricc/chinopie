@@ -1,0 +1,5 @@
+{
+    "venvPath": "/opt/homebrew/Caskroom/miniconda/base/envs",                                                                                                                                                                        
+    "venv": "ml",                                                                                                                                                                                                  
+    "pythonVersion": "3.10"
+}
