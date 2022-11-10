@@ -25,7 +25,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 LOGGER_FORMAT='<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
 
-DIR_STATE_DICT = "state"
+DIR_SHARE_STATE = "state"
 DIR_CHECKPOINTS = "checkpoints"
 DIR_DATASET = "data"
 DIR_TENSORBOARD = "boards"
@@ -55,13 +55,13 @@ class FileHelper:
                 os.mkdir(os.path.join(self.disk_root, DIR_TENSORBOARD))
             if not os.path.exists(os.path.join(self.disk_root, DIR_DATASET)):
                 os.mkdir(os.path.join(self.disk_root, DIR_DATASET))
-            if not os.path.exists(os.path.join(self.disk_root, DIR_STATE_DICT)):
-                os.mkdir(os.path.join(self.disk_root, DIR_STATE_DICT))
+            if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
+                os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
         if self.ddp_session:
             dist.barrier()
 
-        self.cp_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
+        self.ckpt_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
         self.board_dir = os.path.join(
             self.disk_root,
             DIR_TENSORBOARD,
@@ -69,20 +69,22 @@ class FileHelper:
         )
 
     def prepare_checkpoint_dir(self):
-        if not os.path.exists(self.cp_dir):
+        if not os.path.exists(self.ckpt_dir):
             if self._is_main_process():
-                os.mkdir(self.cp_dir)
+                os.mkdir(self.ckpt_dir)
+        if self.ddp_session:
+            dist.barrier()
 
     def find_latest_checkpoint(self) -> Optional[str]:
         """
         find the latest checkpoint file at checkpoint dir.
         """
 
-        if not os.path.exists(self.cp_dir):
+        if not os.path.exists(self.ckpt_dir):
             return None
 
         checkpoint_files: List[str] = []
-        for (dirpath, dirnames, filenames) in os.walk(self.cp_dir):
+        for (dirpath, dirnames, filenames) in os.walk(self.ckpt_dir):
             checkpoint_files.extend(filenames)
 
         latest_checkpoint_path = None
@@ -101,31 +103,31 @@ class FileHelper:
                 latest_checkpoint_path = file
 
         if latest_checkpoint_path:
-            return os.path.join(self.cp_dir, latest_checkpoint_path)
+            return os.path.join(self.ckpt_dir, latest_checkpoint_path)
 
     def get_initparams_slot(self) -> str:
         if not self._is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
-        logger.warning("[HELPER] you have ask for initialization slot")
+        logger.info("[INIT] you have ask for initialization slot")
         filename = f"init.pth"
-        return os.path.join(self.cp_dir, filename)
+        return os.path.join(self.ckpt_dir, filename)
 
     def get_checkpoint_slot(self, cur_epoch: int) -> str:
         if not self._is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
         filename = f"checkpoint-{cur_epoch}.pth"
-        return os.path.join(self.cp_dir, filename)
+        return os.path.join(self.ckpt_dir, filename)
 
     def get_dataset_slot(self, dataset_id: str) -> str:
         return os.path.join(self.disk_root, DIR_DATASET, dataset_id)
     
     def get_state_slot(self,name:str)->str:
-        return os.path.join(self.disk_root,DIR_STATE_DICT,name)
+        return os.path.join(self.disk_root,DIR_SHARE_STATE,name)
 
     def get_best_checkpoint_slot(self) -> str:
         if not self._is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
-        return os.path.join(self.cp_dir, "best.pth")
+        return os.path.join(self.ckpt_dir, "best.pth")
 
     def get_default_board_dir(self) -> str:
         return self.board_dir
@@ -354,7 +356,7 @@ class TrainHelper:
                 self.dev = f"cuda:{dist.get_rank()}"
             else:
                 logger.warning(
-                    f"world_size is larger than the number of devices. assume use CPU."
+                    f"[DDP] world_size is larger than the number of devices. assume use CPU."
                 )
                 self.dev = f"cpu:{dist.get_rank()}"
 
