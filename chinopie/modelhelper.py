@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from torch.utils.data.distributed import DistributedSampler
 
-LOGGER_FORMAT='<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
+LOGGER_FORMAT='<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
 
 DIR_SHARE_STATE = "state"
 DIR_CHECKPOINTS = "checkpoints"
