@@ -363,7 +363,7 @@ class TrainHelper:
             # logger file
             logger.remove()
             logger.add(sys.stderr, level="WARNING",format=LOGGER_FORMAT)
-            logger.add(f"log-{dist.get_rank()}.log",format=LOGGER_FORMAT)
+            logger.add(f"log-{self._comment}({dist.get_rank()}).log",format=LOGGER_FORMAT)
 
             logger.warning(f"[DDP] ddp is enabled. current rank is {dist.get_rank()}.")
             logger.warning(
@@ -383,7 +383,7 @@ class TrainHelper:
             # logger file
             logger.remove()
             logger.add(sys.stderr, level="WARNING",format=LOGGER_FORMAT)
-            logger.add(f"log.log",format=LOGGER_FORMAT)
+            logger.add(f"log-{self._comment}.log",format=LOGGER_FORMAT)
 
             if dev == "":
                 if torch.cuda.is_available():
@@ -459,9 +459,8 @@ class TrainHelper:
         assert (
                 self._dataloader_train.batch_size == self._batch_size
         ), f"batch size of dataloader_train does not match"
-        assert (
-                self._dataloader_val.batch_size == self._batch_size
-        ), f"batch size of dataloader_val does not match"
+        if self._dataloader_val.batch_size != self._batch_size:
+            logger.warning("[HELPER] batch size of dataloader_val does not match")
 
         if self._ddp_session:
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
@@ -648,7 +647,8 @@ class TrainHelper:
             self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
 
             for k,v in enumerate(output_dist_probes):
-                self.tbwriter.add_histogram(f"outdist/train/{k}",v.val,self.cur_epoch)
+                if v.val.numel()>0:
+                    self.tbwriter.add_histogram(f"outdist/train/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -692,7 +692,8 @@ class TrainHelper:
             self.tbwriter.add_scalar("score/val", phase.score, self.cur_epoch)
 
             for k,v in enumerate(output_dist_probes):
-                self.tbwriter.add_histogram(f"outdist/val/{k}",v.val,self.cur_epoch)
+                if v.val.numel()>0:
+                    self.tbwriter.add_histogram(f"outdist/val/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -739,7 +740,8 @@ class TrainHelper:
             self.tbwriter.add_scalar("score/test", phase.score, self.cur_epoch)
 
             for k,v in enumerate(output_dist_probes):
-                self.tbwriter.add_histogram(f"outdist/test/{k}",v.val,self.cur_epoch)
+                if v.val.numel()>0:
+                    self.tbwriter.add_histogram(f"outdist/test/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
