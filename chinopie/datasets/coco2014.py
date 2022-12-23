@@ -158,6 +158,9 @@ class COCO2014Dataset(Dataset):
         logger.warning(
             f"[dataset] COCO2014 classification {phase} phase, {self.num_classes} classes, {len(self.img_list)} images"
         )
+    
+    def retain_range(self,l:int,r:int):
+        self.img_list=self.img_list[l:r]
 
     def load_annotation(self):
         with open(os.path.join(self.root, f"{self.phase}_annotation.json"), "r") as f:
