@@ -51,9 +51,6 @@ class AveragePrecisionMeter:
         if not torch.is_tensor(target):
             target = torch.from_numpy(target)
 
-        assert (
-            target.dtype == torch.long or target.dtype == torch.int
-        ), "wrong target type"
         assert output.dtype == torch.float, "wrong output type"
 
         if output.dim() == 1:
