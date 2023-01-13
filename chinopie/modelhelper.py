@@ -20,6 +20,7 @@ from .probes.avgmeter import AverageMeter, NumericMeter
 from .datasets.fakeset import FakeEmptySet
 
 from tqdm import tqdm
+from prettytable import PrettyTable,PLAIN_COLUMNS
 
 from torch.utils.data.distributed import DistributedSampler
 
@@ -779,17 +780,32 @@ class TrainHelper:
         args = vars(parser.parse_args())
 
         active_results = {}
+        name,val,changed=[],[],[]
         for param_name, param in params.items():
             env_input = args[param_name]
             if env_input != param.default:
                 active_results[param_name] = env_input
-                logger.warning(f"[CPARAMS] {param_name}: {env_input} (changed)")
+                name.append(f"{param_name}*")
+                val.append(env_input)
             else:
                 assert (
                         param.default != inspect.Parameter.empty
                 ), f"you did not set parameter `{param_name}`"
                 active_results[param_name] = param.default
-                logger.warning(f"[CPARAMS] {param_name}: {param.default}")
+                name.append(f"{param_name}")
+                val.append(param.default)
+        
+        while len(name)%3!=0:
+            name.append('')
+            val.append('')
+        col_len=len(name)//3
+        table=PrettyTable()
+        table.set_style(PLAIN_COLUMNS)
+        for i in range(3):
+            table.add_column("params",name[i*col_len:(i+1)*col_len],"l")
+            table.add_column("values",val[i*col_len:(i+1)*col_len],"c")
+        logger.warning(f"[CPARAMS]\n{table}")
+        
         logger.remove(temp)
         func(**active_results)
 
