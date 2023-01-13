@@ -38,7 +38,7 @@ def prepare_coco2014(root: str, phase: str):
     # image file
     cached_file = os.path.join(tmpdir, filename)
     if not os.path.exists(cached_file):
-        logger.warning(f"downloading {URLS[phase+'_img']} to {cached_file}")
+        logger.info(f"downloading {URLS[phase+'_img']} to {cached_file}")
         os.chdir(tmpdir)
         subprocess.call("wget " + URLS[phase + "_img"], shell=True)
         os.chdir(root)
@@ -46,19 +46,19 @@ def prepare_coco2014(root: str, phase: str):
     # extract image
     img_data = os.path.join(root, filename.split(".")[0])
     if not os.path.exists(img_data):
-        logger.warning(
+        logger.info(
             "[dataset] Extracting tar file {file} to {path}".format(
                 file=cached_file, path=root
             )
         )
         command = "unzip -q {} -d {}".format(cached_file, root)
         os.system(command)
-    logger.warning("[dataset] Done!")
+    logger.info("[dataset] Done!")
 
     # train/val images/annotations
     cached_file = os.path.join(tmpdir, "annotations_trainval2014.zip")
     if not os.path.exists(cached_file):
-        logger.warning(
+        logger.info(
             'Downloading: "{}" to {}\n'.format(URLS["annotations"], cached_file)
         )
         os.chdir(tmpdir)
@@ -66,14 +66,14 @@ def prepare_coco2014(root: str, phase: str):
         os.chdir(root)
     annotations_data = os.path.join(root, "annotations")
     if not os.path.exists(annotations_data):
-        logger.warning(
+        logger.info(
             "[dataset] Extracting tar file {file} to {path}".format(
                 file=cached_file, path=root
             )
         )
         command = "unzip -q {} -d {}".format(cached_file, root)
         os.system(command)
-    logger.warning("[annotation] Done!")
+    logger.info("[annotation] Done!")
 
     annotations_data = os.path.join(root, "annotations")
     anno = os.path.join(root, "{}_annotation.json".format(phase))
@@ -116,7 +116,7 @@ def prepare_coco2014(root: str, phase: str):
         del annotations
         del category
         del category_id
-    logger.warning("[json] Done!")
+    logger.info("[json] Done!")
     os.chdir(work_dir)
 
 
@@ -155,9 +155,12 @@ class COCO2014Dataset(Dataset):
 
         prepare_coco2014(root, phase)
         self.load_annotation()
-        logger.warning(
+        logger.info(
             f"[dataset] COCO2014 classification {phase} phase, {self.num_classes} classes, {len(self.img_list)} images"
         )
+    
+    def reg_extra_preprocess(self,preprocess:Any):
+        self.extra_preprocess=preprocess
     
     def retain_range(self,l:int,r:int):
         self.img_list=self.img_list[l:r]
@@ -182,24 +185,27 @@ class COCO2014Dataset(Dataset):
         filename = item["file_name"]
         labels = sorted(item["labels"])
         negative_labels=sorted(item['negative_labels'])
-        image = self.preprocess(
-            Image.open(os.path.join(self.root, f"{self.phase}2014", filename)).convert(
+        rgb_image=Image.open(os.path.join(self.root, f"{self.phase}2014", filename)).convert(
                 "RGB"
             )
-        )
+        image = self.preprocess(rgb_image)
+        
 
         target = torch.zeros(self.num_classes, dtype=torch.int)
         target[labels] = 1
         if self.negatives_as_neg1:
             target[negative_labels]=-1
 
-
-        return {
+        res={
             "index": index,
             "name": filename,
             "image": image,
             "target": target,
         }
+        if hasattr(self,'extra_preprocess'):
+            extra_image=self.extra_preprocess(rgb_image)
+            res['extra_image']=extra_image
+        return res
     
     def get_all_labels(self):
         tmp=torch.zeros((len(self.img_list),self.num_classes),dtype=torch.long)

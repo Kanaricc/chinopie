@@ -362,27 +362,27 @@ class TrainHelper:
 
             # logger file
             logger.remove()
-            logger.add(sys.stderr, level="WARNING",format=LOGGER_FORMAT)
+            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
             logger.add(f"log-{self._comment}({dist.get_rank()}).log",format=LOGGER_FORMAT)
 
             logger.warning(f"[DDP] ddp is enabled. current rank is {dist.get_rank()}.")
-            logger.warning(
+            logger.info(
                 f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
             )
 
             if self._is_main_process():
-                logger.warning(
+                logger.info(
                     f"[DDP] rank {dist.get_rank()} as main process, methods are enabled for it."
                 )
             else:
-                logger.warning(
+                logger.info(
                     f"[DDP] rank {dist.get_rank()} as follower process, methods are disabled for it."
                 )
 
         else:
             # logger file
             logger.remove()
-            logger.add(sys.stderr, level="WARNING",format=LOGGER_FORMAT)
+            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
             logger.add(f"log-{self._comment}.log",format=LOGGER_FORMAT)
 
             if dev == "":
@@ -432,7 +432,7 @@ class TrainHelper:
         self._board_dir = checkpoint["board_dir"]
         self._recoverd_epoch = checkpoint["cur_epoch"]
         self._best_val_score = checkpoint["best_val_score"]
-        logger.warning(f"[CHECKPOINT] load state from checkpoint")
+        logger.info(f"[CHECKPOINT] load state from checkpoint")
 
     def export_state(self):
         self._trigger_state_save = False
@@ -479,7 +479,7 @@ class TrainHelper:
 
     def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
         if not self._ddp_session or disable_ddp_seed:
-            logger.warning("[HELPER] fixed seed is set for random and torch")
+            logger.info("[HELPER] fixed seed is set for random and torch")
             os.environ["PYTHONHASHSEED"] = str(seed)
             random.seed(seed)
 
@@ -489,7 +489,7 @@ class TrainHelper:
 
             np.random.seed(seed)
         else:
-            logger.warning(
+            logger.info(
                 f"[DDP] fixed seed `{seed + dist.get_rank()}` is set for this process"
             )
             os.environ["PYTHONHASHSEED"] = str(seed + dist.get_rank())
@@ -553,8 +553,8 @@ class TrainHelper:
         if self._dry_run:
             self._epoch_num = 2
         for i in range(self._epoch_num):
-            if hasattr(self, "_recoverd_epoch") and i < self._recoverd_epoch:
-                logger.warning(f"[HELPER] fast forward to epoch {self._recoverd_epoch}")
+            if hasattr(self, "_recoverd_epoch") and i <= self._recoverd_epoch:
+                logger.info(f"[HELPER] fast forward to epoch {self._recoverd_epoch}")
                 continue
             self.cur_epoch = i
 
