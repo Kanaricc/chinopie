@@ -116,7 +116,7 @@ def prepare_voc07(root: str):
                 t = {
                     "id": i,
                     "name": f"{image_id}.jpg",
-                    "label": img_annotations[image_id],
+                    "labels": img_annotations[image_id],
                 }
                 anno.append(t)
 
