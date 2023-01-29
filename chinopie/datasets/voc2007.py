@@ -15,7 +15,7 @@ import torch.nn.functional as F
 from loguru import logger
 
 
-DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar"
+DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtrainval_06-Nov-2007.tar"
 
 LABEL2ID = {
     "aeroplane": 0,
@@ -48,7 +48,7 @@ def get_voc_labels() -> List[str]:
     return keys
 
 
-def prepare_voc12(root: str):
+def prepare_voc07(root: str):
     work_dir = os.getcwd()
 
     if not os.path.exists(root):
@@ -59,9 +59,9 @@ def prepare_voc12(root: str):
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
 
-    cached_file = os.path.join(tmp_dir, "VOCtrainval_11-May-2012.tar")
+    cached_file = os.path.join(tmp_dir, "VOCtrainval_06-Nov-2007.tar")
     if not os.path.exists(cached_file):
-        logger.warning(f"downloading voc12 dataset")
+        logger.warning(f"downloading voc2007 dataset")
         subprocess.call(f"wget -O {cached_file} {DATA_URL}", shell=True)
         logger.warning("done")
 
@@ -72,7 +72,7 @@ def prepare_voc12(root: str):
         subprocess.call(f"tar -xf {cached_file} -C {extracted_dir}", shell=True)
         logger.warning("done")
 
-    vocdevkit = os.path.join(extracted_dir, "VOCdevkit", "VOC2012")
+    vocdevkit = os.path.join(extracted_dir, "VOCdevkit", "VOC2007")
     assert os.path.exists(vocdevkit)
 
     img_dir = os.path.join(root, "img")
@@ -116,7 +116,7 @@ def prepare_voc12(root: str):
                 t = {
                     "id": i,
                     "name": f"{image_id}.jpg",
-                    "labels": img_annotations[image_id],
+                    "label": img_annotations[image_id],
                 }
                 anno.append(t)
 
@@ -126,7 +126,7 @@ def prepare_voc12(root: str):
         logger.warning("done")
 
 
-class VOC2012Dataset(Dataset):
+class VOC2007Dataset(Dataset):
     def __init__(
         self,
         root: str,
@@ -135,7 +135,7 @@ class VOC2012Dataset(Dataset):
         negatives_as_neg1: bool = False,
     ):
         assert phase == "train" or phase == "val"
-        prepare_voc12(root)
+        prepare_voc07(root)
 
         self.root = root
         self.preprocess = preprocess
@@ -154,7 +154,7 @@ class VOC2012Dataset(Dataset):
             img["negative_labels"] = list(full_set - set(img["labels"]))
 
         logger.warning(
-            f"[VOC2012] load num of classes {len(self.cat2id)}, num images {len(self.img_list)}"
+            f"[VOC2007] load num of classes {len(self.cat2id)}, num images {len(self.img_list)}"
         )
 
     def reg_extra_preprocess(self, preprocess: Any):
