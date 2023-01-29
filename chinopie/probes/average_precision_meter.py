@@ -159,6 +159,7 @@ class AveragePrecisionMeter:
         OR = np.sum(Nc) / np.sum(Ng)
         OF1 = (2 * OP * OR) / (OP + OR)
 
+        Np[Np==0]=1
         CP = np.sum(Nc / Np) / n_class
         CR = np.sum(Nc / Ng) / n_class
         CF1 = (2 * CP * CR) / (CP + CR)

@@ -303,6 +303,7 @@ class TrainHelper:
     _dry_run: bool
 
     _custom_global_params: Dict[str, Any]
+    _fastforward_handlers:List[Callable[[int],None]]
     _data_train: Any
     _data_val: Any
     _data_test: Any
@@ -399,6 +400,7 @@ class TrainHelper:
 
         self._custom_probes = []
         self._custom_global_params = {}
+        self._fastforward_handlers = []
         self._dry_run = dry_run
 
         if self._dry_run:
@@ -448,6 +450,9 @@ class TrainHelper:
 
     def register_global_params(self, name: str, value: Any):
         self._custom_global_params[name] = value
+    
+    def register_fastforward_handler(self,func:Callable[[int],None]):
+        self._fastforward_handlers.append(func)
 
     def register_dataset(
             self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
@@ -555,6 +560,8 @@ class TrainHelper:
             self._epoch_num = 2
         for i in range(self._epoch_num):
             if hasattr(self, "_recoverd_epoch") and i <= self._recoverd_epoch:
+                for item in self._fastforward_handlers:
+                    item(i)
                 logger.info(f"[HELPER] fast forward to epoch {self._recoverd_epoch}")
                 continue
             self.cur_epoch = i
