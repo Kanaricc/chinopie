@@ -17,7 +17,7 @@ URLS = {
 }
 
 
-def prepare_coco2014(root: str, phase: str):
+def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
     work_dir = os.getcwd()
     root = os.path.abspath(root)
     tmpdir = os.path.join(root, "tmp")
@@ -79,6 +79,7 @@ def prepare_coco2014(root: str, phase: str):
     anno = os.path.join(root, "{}_annotation.json".format(phase))
     img_id: Dict[str, Dict[str, Any]] = {}
     annotations_id: Dict[str, Set[int]] = {}
+    seg_id: Dict[str, Dict[int,List[Any]]] = {}
     if not os.path.exists(anno):
         annotations_file = json.load(
             open(os.path.join(annotations_data, "instances_{}2014.json".format(phase)))
@@ -93,9 +94,15 @@ def prepare_coco2014(root: str, phase: str):
         for annotation in annotations:
             if annotation["image_id"] not in annotations_id:
                 annotations_id[annotation["image_id"]] = set()
+                seg_id[annotation['image_id']]={}
+            label_id=cat2idx[category_id[annotation["category_id"]]]
             annotations_id[annotation["image_id"]].add(
-                cat2idx[category_id[annotation["category_id"]]]
+                label_id
             )
+            if label_id not in seg_id[annotation['image_id']]:
+                seg_id[annotation['image_id']][label_id]=[]
+            seg_id[annotation['image_id']][label_id].append(annotation["segmentation"])
+
         for img in images:
             if img["id"] not in annotations_id:
                 continue
@@ -103,6 +110,8 @@ def prepare_coco2014(root: str, phase: str):
                 img_id[img["id"]] = {}
             img_id[img["id"]]["file_name"] = img["file_name"]
             img_id[img["id"]]["labels"] = list(annotations_id[img["id"]])
+            if include_segmentations:
+                img_id[img["id"]]['segmentations']=seg_id[img["id"]]
         anno_list: List[Any] = []
         for k, v in img_id.items():
             anno_list.append(v)
