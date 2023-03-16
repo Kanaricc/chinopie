@@ -88,8 +88,11 @@ def train(batch_size:int=16):
             phase.update_probe('a',3.)
             phase.end_phase(0.)
         
-        with helper.section_checkpoint_save():
-            pass
+        with helper.section_checkpoint_save() as s:
+            if s.should_save_ckpt:
+                pass
+            if s.should_save_best:
+                pass
 
 
 if __name__=="__main__":

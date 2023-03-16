@@ -133,7 +133,7 @@ class TrainHelper:
         
         flag_save= self._is_main_process() and self._save_checkpoint_enabled and self._trigger_checkpoint
         flag_best = self._is_main_process() and self._save_checkpoint_enabled and self._trigger_best_score
-        return CheckpointSaveSection(self._export_state(),flag_save,flag_best,not (flag_save or flag_best))
+        return CheckpointSaveSection(self._export_state(),flag_save,flag_best,not (flag_save or flag_best),lambda x:self._merge_section_flags(x))
 
     def _load_from_checkpoint(self, checkpoint: Dict[str, Any]):
         """
@@ -247,9 +247,15 @@ class TrainHelper:
         if not hasattr(self, "_best_test_score"):
             self._best_test_score = 0.0
 
+        # section flag
+        self._section_flags={}
+
         self.report_info()
 
         logger.warning("[HELPER] ready to train model")
+    
+    def _merge_section_flags(self,x:Dict[str,Any]):
+        self._section_flags|=x
 
     def report_info(self):
         dataset_str=f"train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self, '_data_test') else 'not set'})"
@@ -285,6 +291,14 @@ class TrainHelper:
                 logger.error("checkpoint saving not found")
             else:
                 logger.warning("checkpoint saving not found but is disabled")
+        else:
+            if 'checked_helper_state' not in self._section_flags:
+                logger.error("helper state not checked")
+            if 'checked_save_ckpt' not in self._section_flags:
+                logger.error("checkpoint not checked")
+            if 'checked_save_best' not in self._section_flags:
+                logger.error("best result not checked")
+            
         
         # remove checkpoints and boards
         shutil.rmtree(self.file.ckpt_dir)
@@ -418,21 +432,23 @@ class TrainHelper:
                 logger.warning(
                     f"|| RANK {self._ddp_session.get_rank()} end {phase._phase_name} {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
                 )
-        if phase._phase_name=='val' and phase.score >= self._best_val_score:
-            self._best_val_score = phase.score
-            self._trigger_run_test = True
-            if self._save_checkpoint_enabled and not self._test_phase_enabled:
-                self._trigger_best_score = True
-                self._trigger_state_save = True
+        if phase._phase_name=='val':
+            if phase.score >= self._best_val_score or self._diagnose_mode:
+                self._best_val_score = phase.score
+                self._trigger_run_test = True
+                if self._save_checkpoint_enabled and not self._test_phase_enabled:
+                    self._trigger_best_score = True
+                    self._trigger_state_save = True
             
             logger.warning(
                 f"||| END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_train_loss}/{phase.loss_probe.average()}, score {self._last_train_score}/{phase.score} |||"
             )
-        if phase._phase_name=='test' and phase.score >=self._best_test_score:
-            self._best_test_score=phase.score
-            if self._save_checkpoint_enabled:
-                self._trigger_best_score = True
-                self._trigger_state_save = True
+        if phase._phase_name=='test':
+            if phase.score >=self._best_test_score or self._diagnose_mode:
+                self._best_test_score=phase.score
+                if self._save_checkpoint_enabled:
+                    self._trigger_best_score = True
+                    self._trigger_state_save = True
 
 
     @staticmethod

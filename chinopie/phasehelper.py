@@ -16,15 +16,15 @@ class FunctionalSection:
         pass
 
     def __init__(self,break_phase:bool,report_cb:Optional[Callable[[Dict[str,Any]],None]]=None) -> None:
-        self.break_phase=break_phase
-        self.state:Dict[str,Any]={}
-        self.report_cb=report_cb
+        self._break_phase=break_phase
+        self._state:Dict[str,Any]={}
+        self._report_cb=report_cb
 
     def set(self,key:str,val:Any):
-        self.state[key]=val
+        self._state[key]=val
 
     def __enter__(self):
-        if self.break_phase:
+        if self._break_phase:
             sys.settrace(lambda *args,**keys: None)
             frame=sys._getframe(1)
             frame.f_trace=self.trace
@@ -37,12 +37,12 @@ class FunctionalSection:
         if exc_type and issubclass(exc_type,self.JumpSectionException):
             return True
         
-        if self.report_cb:
-            self.report_cb(self.state)
+        if self._report_cb:
+            self._report_cb(self._state)
 
 class CheckpointSaveSection(FunctionalSection):
     def __init__(self, helper_states: Dict[str,Any], save_ckpt:bool, save_best:bool, break_phase: bool,report_cb:Optional[Callable[[Dict[str,Any]],None]]=None) -> None:
-        super().__init__(break_phase)
+        super().__init__(break_phase,report_cb)
 
         self._helper_states=helper_states
         self._save_ckpt=save_ckpt
@@ -50,17 +50,17 @@ class CheckpointSaveSection(FunctionalSection):
     
     @property
     def helper_state(self):
-        self.set("check_helper_state",True)
+        self.set("checked_helper_state",True)
         return self._helper_states
     
     @property
     def should_save_ckpt(self):
-        self.set("check_save_ckpt",True)
+        self.set("checked_save_ckpt",True)
         return self._save_ckpt
     
     @property
     def should_save_best(self):
-        self.set("check_save_best",True)
+        self.set("checked_save_best",True)
         return self._save_best
 
 class CheckpointLoadSection(FunctionalSection):
