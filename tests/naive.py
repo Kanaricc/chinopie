@@ -1,3 +1,5 @@
+import sys
+sys.path.append('..')
 import torch
 from torch import Tensor
 from torch.nn import functional as F
@@ -32,6 +34,9 @@ def train(batch_size:int=16):
     helper.register_test_dataset(testset,testloader)
 
     helper.register_probe('a')
+
+    with helper.section_checkpoint_load() as s:
+        pass
 
     helper.ready_to_train()
 
@@ -82,6 +87,9 @@ def train(batch_size:int=16):
                 phase.update_loss(loss,batch_size)
             phase.update_probe('a',3.)
             phase.end_phase(0.)
+        
+        with helper.section_checkpoint_save():
+            pass
 
 
 if __name__=="__main__":

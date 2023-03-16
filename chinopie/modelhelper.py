@@ -1,4 +1,4 @@
-import os, sys
+import os, sys,shutil
 import argparse
 import random
 import inspect
@@ -16,9 +16,10 @@ from loguru import logger
 
 from .probes.avgmeter import AverageMeter, NumericMeter
 from .datasets.fakeset import FakeEmptySet
-from ddpsession import DdpSession
-from filehelper import FileHelper
-from phasehelper import CheckpointLoadSection, CheckpointSaveSection, PhaseHelper,FunctionalSection
+from .ddpsession import DdpSession
+from .filehelper import FileHelper
+from .phasehelper import CheckpointLoadSection, CheckpointSaveSection, PhaseHelper,FunctionalSection
+from .utils import show_params_in_3cols
 
 LOGGER_FORMAT='<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
 
@@ -110,8 +111,6 @@ class TrainHelper:
         self._diagnose_mode = diagnose
 
         if self._diagnose_mode:
-            self._save_checkpoint_enabled = False
-            self._load_checkpoint_enabled = False
             torch.autograd.anomaly_mode.set_detect_anomaly(True)
             logger.info("diagnose mode enabled")
 
@@ -258,20 +257,25 @@ class TrainHelper:
         logger.warning("[HELPER] ready to train model")
 
     def report_info(self):
-        logger.warning(f"""[HELPER]
-device: {self.dev}
-diagnose: {self._diagnose_mode}
-epoch num: {self._epoch_num}
-dataset: train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self, '_data_test') else 'not set'})
-board dir: {self._board_dir}
-checkpoint load/save: {self._load_checkpoint_enabled}/{self._save_checkpoint_enabled}
-custom probes: {self._custom_probes}
-        """)
+        dataset_str=f"train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self, '_data_test') else 'not set'})"
+        table=show_params_in_3cols(params={
+            "device":self.dev,
+            "diagnose":self._diagnose_mode,
+            "epoch num": self._epoch_num,
+            "dataset": dataset_str,
+            "board dir": self._board_dir,
+            "checkpoint load/save": f"{self._load_checkpoint_enabled}/{self._save_checkpoint_enabled}",
+            "custom probes": self._custom_probes,
+        })
+        logger.warning(f"[INFO]\n{table}")
     
     def _diagnose(self):
         logger.warning("==========Diagnose Results==========")
         if not self._has_checkpoint_load_section:
-            logger.error("checkpoint load not found")
+            if self._load_checkpoint_enabled:
+                logger.error("checkpoint loading not found")
+            else:
+                logger.warning("checkpoint loading not found but is disabled")
         if not self._has_train_phase:
             logger.error("train phase not found")
         if not self._has_val_phase:
@@ -280,11 +284,18 @@ custom probes: {self._custom_probes}
             if self._test_phase_enabled:
                 logger.error("test phase not found")
             else:
-                logger.warning("test phase is disabled")
+                logger.warning("test phase not found but is disabled")
         if not self._has_checkpoint_save_section:
-            logger.error("checkpoint saving not found")
+            if self._save_checkpoint_enabled:
+                logger.error("checkpoint saving not found")
+            else:
+                logger.warning("checkpoint saving not found but is disabled")
         if not self._has_best_save_section:
             logger.error("best saving not found")
+        
+        # remove checkpoints and boards
+        shutil.rmtree(self.file.ckpt_dir)
+        shutil.rmtree(self.file.board_dir)
 
 
     def range_epoch(self):
@@ -468,16 +479,8 @@ custom probes: {self._custom_probes}
                 name.append(f"{param_name}")
                 val.append(param.default)
         
-        while len(name)%3!=0:
-            name.append('')
-            val.append('')
-        col_len=len(name)//3
-        table=PrettyTable()
-        table.set_style(PLAIN_COLUMNS)
-        for i in range(3):
-            table.add_column("params",name[i*col_len:(i+1)*col_len],"l")
-            table.add_column("values",val[i*col_len:(i+1)*col_len],"c")
-        logger.warning(f"[CPARAMS]\n{table}")
+        table=show_params_in_3cols(name=name,val=val)
+        logger.warning(f"[HYPERPARAMETERS]\n{table}")
         
         logger.remove(temp)
         func(**active_results)

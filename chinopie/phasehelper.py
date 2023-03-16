@@ -6,8 +6,8 @@ from torch import Tensor
 from loguru import logger
 from tqdm import tqdm
 
-from probes import AverageMeter,NumericMeter
-from ddpsession import DdpSession
+from .probes import AverageMeter,NumericMeter
+from .ddpsession import DdpSession
 
 class FunctionalSection:
     class JumpSectionException(Exception):
