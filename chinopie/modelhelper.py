@@ -247,7 +247,8 @@ class TrainHelper:
         ):
             logger.error("[DATASET] dataset not set")
             raise RuntimeError("dataset not set")
-        if not hasattr(self, "_dataloader_test"):
+        self._test_phase_enabled=hasattr(self, "_dataloader_test")
+        if not self._test_phase_enabled:
             logger.warning("[DATASET] test dataset not set. pass test phase.")
 
         self.file.prepare_checkpoint_dir()
@@ -258,8 +259,11 @@ class TrainHelper:
         # create board dir before training
         self.tbwriter = SummaryWriter(self._board_dir)
 
+        # to avoid flush checkpoint
         if not hasattr(self, "_best_val_score"):
             self._best_val_score = 0.0
+        if not hasattr(self, "_best_test_score"):
+            self._best_test_score = 0.0
         self._trigger_best_score = False
         self._trigger_checkpoint = False
         self._trigger_state_save = False
@@ -329,7 +333,7 @@ custom probes: {self._custom_probes}
             self._dataloader_train,
             ddp_session=None,
             dry_run=self._dry_run,
-            exit_callback=self.end_train,
+            exit_callback=self.end_phase_callback,
             custom_probes=self._custom_probes.copy(),
         )
 
@@ -340,12 +344,12 @@ custom probes: {self._custom_probes}
             self._dataloader_val,
             ddp_session=None,
             dry_run=self._dry_run,
-            exit_callback=self.end_val,
+            exit_callback=self.end_phase_callback,
             custom_probes=self._custom_probes.copy(),
         )
 
     def phase_test(self):
-        need_run = hasattr(self, "_dataloader_test") and self._trigger_run_test
+        need_run = self._test_phase_enabled and self._trigger_run_test
         self._trigger_run_test = False
         return PhaseHelper(
             "test",
@@ -355,12 +359,14 @@ custom probes: {self._custom_probes}
             else DataLoader(FakeEmptySet()),
             ddp_session=None,
             dry_run=self._dry_run,
-            exit_callback=self.end_test,
+            exit_callback=self.end_phase_callback,
             break_phase=not need_run,
             custom_probes=self._custom_probes.copy(),
         )
-
-    def end_train(self, phase: PhaseHelper):
+    
+    def end_phase_callback(self,phase:PhaseHelper):
+        assert phase._phase_name in ['train', 'val','test']
+        # collect probes
         if self._ddp_session is None:
             output_dist_probes=phase._output_dist_probes
         else:
@@ -372,123 +378,55 @@ custom probes: {self._custom_probes}
                     dst.update(src.val)
             del gathered_output_dist_probes
         
+        # only log probes in main process
         if self._is_main_process():
             # assume training loss is sync by user
             self.tbwriter.add_scalar(
-                "loss/train", phase.loss_probe.average(), self.cur_epoch
+                f"loss/{phase._phase_name}", phase.loss_probe.average(), self.cur_epoch
             )
             self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
 
             for k,v in enumerate(output_dist_probes):
                 if v.val.numel()>0:
-                    self.tbwriter.add_histogram(f"outdist/train/{k}",v.val,self.cur_epoch)
+                    self.tbwriter.add_histogram(f"outdist/{phase._phase_name}/{k}",v.val,self.cur_epoch)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
             for k in self._custom_probes:
                 if phase.custom_probes[k].has_data():
                     self.tbwriter.add_scalar(
-                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
+                        f"{k}/{phase._phase_name}", phase.custom_probes[k].average(), self.cur_epoch
                     )
                     logger.info(
-                        f"[TRAIN_CPROBES] {k}: {phase.custom_probes[k].average()}"
+                        f"[{phase._phase_name} probes] {k}: {phase.custom_probes[k].average()}"
                     )
-        
-        self._last_train_score=phase.score
-        self._last_train_loss=phase.loss_probe.average()
-        if not self._ddp_session:
-            logger.warning(
-                f"|| END_TRAIN {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
-            )
-        else:
-            logger.warning(
-                f"|| RANK {self._ddp_session.get_rank()} END_TRAIN {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
-            )
-
-    def end_val(self, phase: PhaseHelper):
-        if self._ddp_session is None:
-            output_dist_probes=phase._output_dist_probes
-        else:
-            gathered_output_dist_probes:List[List[NumericMeter]]=[]
-            self._ddp_session.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
-            output_dist_probes=gathered_output_dist_probes[0]
-            for i in gathered_output_dist_probes[1:]:
-                for dst,src in zip(output_dist_probes,i):
-                    dst.update(src.val)
-            del gathered_output_dist_probes
-
-        if self._is_main_process():
-            # validation phase is full and run duplicated on every processes, including main process
-            self.tbwriter.add_scalar(
-                "loss/val", phase.loss_probe.average(), self.cur_epoch
-            )
-            self.tbwriter.add_scalar("score/val", phase.score, self.cur_epoch)
-
-            for k,v in enumerate(output_dist_probes):
-                if v.val.numel()>0:
-                    self.tbwriter.add_histogram(f"outdist/val/{k}",v.val,self.cur_epoch)
-
-            # sync of custom probes is done by users
-            # TODO: but this can be done by us if necessary
-            for k in self._custom_probes:
-                if phase.custom_probes[k].has_data():
-                    self.tbwriter.add_scalar(
-                        f"{k}/val", phase.custom_probes[k].average(), self.cur_epoch
-                    )
-                    logger.info(
-                        f"[VAL_CPROBES] {k}: {phase.custom_probes[k].average()}"
-                    )
-
-            logger.warning(
-                f"|| END_VAL {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
-            )
+        if phase._phase_name in ['train','val']:
+            self._last_train_score=phase.score
+            self._last_train_loss=phase.loss_probe.average()
+            if not self._ddp_session:
+                logger.warning(
+                    f"|| end {phase._phase_name} {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+                )
+            else:
+                logger.warning(
+                    f"|| RANK {self._ddp_session.get_rank()} end {phase._phase_name} {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+                )
+        if phase._phase_name=='val' and phase.score >= self._best_val_score:
+            self._best_val_score = phase.score
+            self._trigger_run_test = True
+            if self._enable_checkpoint and not self._test_phase_enabled:
+                self._trigger_best_score = True
+                self._trigger_state_save = True
+            
             logger.warning(
                 f"||| END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_train_loss}/{phase.loss_probe.average()}, score {self._last_train_score}/{phase.score} |||"
             )
-
-        if phase.score >= self._best_val_score:
-            self._best_val_score = phase.score
-            self._trigger_run_test = True
-            # TODO: this ?
+        if phase._phase_name=='test' and phase.score >=self._best_test_score:
+            self._best_test_score=phase.score
             if self._enable_checkpoint:
                 self._trigger_best_score = True
                 self._trigger_state_save = True
 
-    def end_test(self, phase: PhaseHelper):
-        if self._ddp_session is None:
-            output_dist_probes=phase._output_dist_probes
-        else:
-            gathered_output_dist_probes:List[List[NumericMeter]]=[]
-            self._ddp_session.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
-            output_dist_probes=gathered_output_dist_probes[0]
-            for i in gathered_output_dist_probes[1:]:
-                for dst,src in zip(output_dist_probes,i):
-                    dst.update(src.val)
-            del gathered_output_dist_probes
-
-        if self._is_main_process():
-            self.tbwriter.add_scalar(
-                "loss/test", phase.loss_probe.average(), self.cur_epoch
-            )
-            self.tbwriter.add_scalar("score/test", phase.score, self.cur_epoch)
-
-            for k,v in enumerate(output_dist_probes):
-                if v.val.numel()>0:
-                    self.tbwriter.add_histogram(f"outdist/test/{k}",v.val,self.cur_epoch)
-
-            # sync of custom probes is done by users
-            # TODO: but this can be done by us if necessary
-            for k in self._custom_probes:
-                if phase.custom_probes[k].has_data():
-                    self.tbwriter.add_scalar(
-                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
-                    )
-                    logger.info(
-                        f"[TEST_CPROBES] {k}: {phase.custom_probes[k].average()}"
-                    )
-            logger.warning(
-                f"|| END_TEST {self.cur_epoch} - {phase.loss_probe.average()}, score {phase.score} ||"
-            )
 
     @staticmethod
     def auto_bind_and_run(func):
