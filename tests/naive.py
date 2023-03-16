@@ -16,7 +16,7 @@ class Model(nn.Module):
         return self.fc1(x)
 
 def train(batch_size:int=16):
-    helper=TrainHelper('deps',10,batch_size,True,True,None,'114514',dry_run=True)
+    helper=TrainHelper('deps',10,batch_size,True,True,None,'114514',diagnose=True)
 
     trainset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
     valset=FakeRandomSet(torch.zeros(10),torch.zeros(10))

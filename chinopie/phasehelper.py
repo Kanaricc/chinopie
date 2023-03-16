@@ -9,26 +9,44 @@ from tqdm import tqdm
 from probes import AverageMeter,NumericMeter
 from ddpsession import DdpSession
 
+class FunctionalSection:
+    class JumpSectionException(Exception):
+        pass
+
+    def __init__(self,break_phase:bool) -> None:
+        self.break_phase=break_phase
+
+    def __enter__(self):
+        if self.break_phase:
+            raise self.JumpSectionException()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type == self.JumpSectionException:
+            return True
+
+class CheckpointSaveSection(FunctionalSection):
+    def __init__(self, helper_states: Dict[str,Any], break_phase: bool) -> None:
+        super().__init__(break_phase)
+
+        self._helper_states=helper_states
+    
+    @property
+    def helper_state(self):
+        return self._helper_states
+
+class CheckpointLoadSection(FunctionalSection):
+    def __init__(self,cb:Callable[[Dict[str,Any]],None], break_phase: bool) -> None:
+        super().__init__(break_phase)
+
+        self._cb=cb
+    
+    def load_helper_state(self,state:Dict[str,Any]):
+        self._cb(state)
+
 class PhaseHelper:
     class JumpPhaseException(Exception):
         pass
-
-    _phase_name: str
-    _loss_probe: AverageMeter
-    _output_dist_probes: List[NumericMeter]
-    _custom_probe_name: List[str]
-    _custom_probes: Dict[str, AverageMeter]
-    _dataset: Any
-    _dataloader: DataLoader
-    _score: float
-    _ddp_session: Optional[DdpSession]
-    _dry_run: bool
-
-    _loss_updated: bool
-    _score_updated: bool
-
-    _exit_callback: Callable[[Self], None]
-    _break_phase: bool
 
     def __init__(
             self,
