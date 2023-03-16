@@ -1,5 +1,6 @@
 import os, sys
 import argparse
+import pathlib
 import random
 import inspect
 from typing import Any, Callable, Dict, List, Optional
@@ -122,8 +123,12 @@ class FileHelper:
     def get_dataset_slot(self, dataset_id: str) -> str:
         return os.path.join(self.disk_root, DIR_DATASET, dataset_id)
     
-    def get_state_slot(self,name:str)->str:
-        return os.path.join(self.disk_root,DIR_SHARE_STATE,name)
+    def get_state_slot(self,*name:str)->str:
+        path=os.path.join(self.disk_root,DIR_SHARE_STATE,*name)
+        parent=pathlib.Path(path).parent
+        if not parent.exists():
+            os.makedirs(parent)
+        return path
 
     def get_best_checkpoint_slot(self) -> str:
         if not self._is_main_process():
@@ -792,7 +797,7 @@ class TrainHelper:
             env_input = args[param_name]
             if env_input != param.default:
                 active_results[param_name] = env_input
-                name.append(f"{param_name}*")
+                name.append(f"*{param_name}")
                 val.append(env_input)
             else:
                 assert (

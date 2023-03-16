@@ -1,6 +1,7 @@
 import os
 import random
 import subprocess
+from xml.dom import minidom
 from typing import Any, List, Optional, Tuple
 import json
 from PIL import Image
@@ -15,7 +16,9 @@ import torch.nn.functional as F
 from loguru import logger
 
 
-DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtrainval_06-Nov-2007.tar"
+TRAINVAL_DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtrainval_06-Nov-2007.tar"
+TEST_DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtest_06-Nov-2007.tar"
+TEST_ANNOTATION_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtestnoimgs_06-Nov-2007.tar"
 
 LABEL2ID = {
     "aeroplane": 0,
@@ -48,7 +51,7 @@ def get_voc_labels() -> List[str]:
     return keys
 
 
-def prepare_voc07(root: str):
+def prepare_voc07(root: str,ignore_difficult_label:bool=True):
     work_dir = os.getcwd()
 
     if not os.path.exists(root):
@@ -59,20 +62,33 @@ def prepare_voc07(root: str):
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
 
-    cached_file = os.path.join(tmp_dir, "VOCtrainval_06-Nov-2007.tar")
-    if not os.path.exists(cached_file):
-        logger.warning(f"downloading voc2007 dataset")
-        subprocess.call(f"wget -O {cached_file} {DATA_URL}", shell=True)
+    cached_tv_file = os.path.join(tmp_dir, "VOCtrainval_06-Nov-2007.tar")
+    cached_test_file = os.path.join(tmp_dir, "VOCtest_06-Nov-2007.tar")
+    cached_test_annotation = os.path.join(tmp_dir, "VOCtestnoimgs_06-Nov-2007.tar")
+    if not os.path.exists(cached_tv_file):
+        logger.warning(f"downloading voc2007 trainval dataset")
+        subprocess.call(f"wget -O {cached_tv_file} {TRAINVAL_DATA_URL}", shell=True)
+        logger.warning("done")
+    if not os.path.exists(cached_test_file):
+        logger.warning(f"downloading voc2007 test dataset")
+        subprocess.call(f"wget -O {cached_test_file} {TEST_DATA_URL}", shell=True)
+        logger.warning("done")
+    if not os.path.exists(cached_test_annotation):
+        logger.warning(f"downloading voc2007 test dataset")
+        subprocess.call(f"wget -O {cached_test_annotation} {TEST_ANNOTATION_URL}", shell=True)
         logger.warning("done")
 
     extracted_dir = os.path.join(tmp_dir, "extracted")
     if not os.path.exists(extracted_dir):
         logger.warning(f"extracting dataset")
         os.mkdir(extracted_dir)
-        subprocess.call(f"tar -xf {cached_file} -C {extracted_dir}", shell=True)
+        subprocess.call(f"tar -xf {cached_tv_file} -C {extracted_dir}", shell=True)
+        subprocess.call(f"tar -xf {cached_test_file} -C {extracted_dir}", shell=True)
+        subprocess.call(f"tar -xf {cached_test_annotation} -C {extracted_dir}", shell=True)
         logger.warning("done")
 
     vocdevkit = os.path.join(extracted_dir, "VOCdevkit", "VOC2007")
+    anno_path=os.path.join(vocdevkit, "Annotations")
     assert os.path.exists(vocdevkit)
 
     img_dir = os.path.join(root, "img")
@@ -90,13 +106,16 @@ def prepare_voc07(root: str):
         json.dump(LABEL2ID, open(cat_json, "w"))
         logger.warning("done")
 
-    anno_json = os.path.join(root, "annotations_train.json")
-    if not os.path.exists(anno_json):
+    any_anno_json = os.path.join(root, "annotations_train.json")
+    if not os.path.exists(any_anno_json):
         logger.warning(f"generating annotations json")
         labels_dir = os.path.join(vocdevkit, "ImageSets", "Main")
 
-        for phase in ["train", "val"]:
+        warning_ignorance=False
+        for phase in ["train", "val", "trainval", "test"]:
             img_annotations = {}
+            label_difficulty = {}
+            label_easy = {}
             img_ids = []
             for label in LABEL2ID:
                 label_file = os.path.join(labels_dir, f"{label}_{phase}.txt")
@@ -106,10 +125,36 @@ def prepare_voc07(root: str):
                         spline = list(map(lambda x: x.strip(), line.strip().split(" ")))
                         image_id, positive = spline[0], spline[-1]
                         if positive == "1":
+                            # first to see an image
                             if image_id not in img_annotations:
                                 img_annotations[image_id] = []
                                 img_ids.append(image_id)
-                            img_annotations[image_id].append(LABEL2ID[label])
+                                # load difficulty
+                                label_difficulty[image_id] = set()
+                                label_easy[image_id]=set()
+                                instance_anno=os.path.join(anno_path,f"{image_id}.xml")
+                                dom_tree=minidom.parse(instance_anno).documentElement
+                                objects=dom_tree.getElementsByTagName('object')
+                                for obj in objects:
+                                    if (obj.getElementsByTagName('difficult')[0].firstChild.data) == '1':
+                                        tag = obj.getElementsByTagName('name')[0].firstChild.data.lower()
+                                        label_difficulty[image_id].add(tag)
+                                    if (obj.getElementsByTagName('difficult')[0].firstChild.data) == '0':
+                                        tag = obj.getElementsByTagName('name')[0].firstChild.data.lower()
+                                        label_easy[image_id].add(tag)
+                                    
+                            if ignore_difficult_label:
+                                if label in label_easy[image_id]:
+                                    img_annotations[image_id].append(LABEL2ID[label])
+                                elif label not in label_difficulty[image_id]:
+                                    img_annotations[image_id].append(LABEL2ID[label])
+                                else:
+                                    if not warning_ignorance:
+                                        logger.debug(f"label like `{label}` will be ignored in `{image_id}` since it's tagged difficult.")
+                                        warning_ignorance=True
+                            else:
+                                img_annotations[image_id].append(LABEL2ID[label])
+
 
             anno: List = []
             for i, image_id in enumerate(img_ids):
@@ -134,7 +179,7 @@ class VOC2007Dataset(Dataset):
         phase: str = "train",
         negatives_as_neg1: bool = False,
     ):
-        assert phase == "train" or phase == "val"
+        assert phase in ["train","val","trainval","test"]
         prepare_voc07(root)
 
         self.root = root
@@ -175,7 +220,7 @@ class VOC2007Dataset(Dataset):
         target2 = torch.zeros(self.num_classes, dtype=torch.int)
         target2[target] = 1
         if self.negatives_as_neg1:
-            target[nagatives] = -1
+            target2[nagatives] = -1
 
         res = {
             "index": index,

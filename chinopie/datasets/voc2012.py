@@ -16,6 +16,7 @@ from loguru import logger
 
 
 DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar"
+TEST_DATA_URL = "http://pjreddie.com/media/files/VOC2012test.tar"
 
 LABEL2ID = {
     "aeroplane": 0,
