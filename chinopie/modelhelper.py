@@ -53,6 +53,13 @@ class TrainHelper:
         self._comment = comment
         self._ddp_session = DdpSession() if enable_ddp else None
 
+        # init diagnose flags
+        self._has_checkpoint_load_section=False
+        self._has_train_phase=False
+        self._has_val_phase=False
+        self._has_test_phase=False
+        self._has_checkpoint_save_section=False
+
         if self._ddp_session:
             self._ddp_session.barrier()
 
@@ -124,14 +131,9 @@ class TrainHelper:
     def section_checkpoint_save(self):
         self._has_checkpoint_save_section=True
         
-        flag= self._is_main_process() and self._save_checkpoint_enabled and self._trigger_checkpoint
-        return CheckpointSaveSection(self._export_state(),flag)
-
-    def section_best_save(self):
-        self._has_best_save_section=True
-
-        flag = self._is_main_process() and self._save_checkpoint_enabled and self._trigger_best_score
-        return CheckpointSaveSection(self._export_state(),flag)
+        flag_save= self._is_main_process() and self._save_checkpoint_enabled and self._trigger_checkpoint
+        flag_best = self._is_main_process() and self._save_checkpoint_enabled and self._trigger_best_score
+        return CheckpointSaveSection(self._export_state(),flag_save,flag_best,not (flag_save or flag_best))
 
     def _load_from_checkpoint(self, checkpoint: Dict[str, Any]):
         """
@@ -247,13 +249,6 @@ class TrainHelper:
 
         self.report_info()
 
-        # init diagnose flags
-        self._has_checkpoint_load_section=False
-        self._has_train_phase=False
-        self._has_val_phase=False
-        self._has_test_phase=False
-        self._has_checkpoint_save_section=False
-        self._has_best_save_section=False
         logger.warning("[HELPER] ready to train model")
 
     def report_info(self):
@@ -290,8 +285,6 @@ class TrainHelper:
                 logger.error("checkpoint saving not found")
             else:
                 logger.warning("checkpoint saving not found but is disabled")
-        if not self._has_best_save_section:
-            logger.error("best saving not found")
         
         # remove checkpoints and boards
         shutil.rmtree(self.file.ckpt_dir)

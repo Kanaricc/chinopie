@@ -1,3 +1,5 @@
+import sys
+import inspect
 from typing import List,Dict,Any,Optional,Callable
 from typing_extensions import Self
 
@@ -13,27 +15,53 @@ class FunctionalSection:
     class JumpSectionException(Exception):
         pass
 
-    def __init__(self,break_phase:bool) -> None:
+    def __init__(self,break_phase:bool,report_cb:Optional[Callable[[Dict[str,Any]],None]]=None) -> None:
         self.break_phase=break_phase
+        self.state:Dict[str,Any]={}
+        self.report_cb=report_cb
+
+    def set(self,key:str,val:Any):
+        self.state[key]=val
 
     def __enter__(self):
         if self.break_phase:
-            raise self.JumpSectionException()
+            sys.settrace(lambda *args,**keys: None)
+            frame=sys._getframe(1)
+            frame.f_trace=self.trace
         return self
+    
+    def trace(self,frame,event,arg):
+        raise self.JumpSectionException()
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type == self.JumpSectionException:
+        if exc_type and issubclass(exc_type,self.JumpSectionException):
             return True
+        
+        if self.report_cb:
+            self.report_cb(self.state)
 
 class CheckpointSaveSection(FunctionalSection):
-    def __init__(self, helper_states: Dict[str,Any], break_phase: bool) -> None:
+    def __init__(self, helper_states: Dict[str,Any], save_ckpt:bool, save_best:bool, break_phase: bool,report_cb:Optional[Callable[[Dict[str,Any]],None]]=None) -> None:
         super().__init__(break_phase)
 
         self._helper_states=helper_states
+        self._save_ckpt=save_ckpt
+        self._save_best=save_best
     
     @property
     def helper_state(self):
+        self.set("check_helper_state",True)
         return self._helper_states
+    
+    @property
+    def should_save_ckpt(self):
+        self.set("check_save_ckpt",True)
+        return self._save_ckpt
+    
+    @property
+    def should_save_best(self):
+        self.set("check_save_best",True)
+        return self._save_best
 
 class CheckpointLoadSection(FunctionalSection):
     def __init__(self,cb:Callable[[Dict[str,Any]],None], break_phase: bool) -> None:
