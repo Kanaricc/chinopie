@@ -107,9 +107,9 @@ class TrainHelper:
         self._custom_probes = []
         self._custom_global_params: Dict[str, Any] = {}
         self._fastforward_handlers:List[Callable[[int],None]] = []
-        self._diagnose = diagnose
+        self._diagnose_mode = diagnose
 
-        if self._diagnose:
+        if self._diagnose_mode:
             self._save_checkpoint_enabled = False
             self._load_checkpoint_enabled = False
             torch.autograd.anomaly_mode.set_detect_anomaly(True)
@@ -217,7 +217,7 @@ class TrainHelper:
         return self._custom_global_params[name]
 
     def set_dry_run(self):
-        self._diagnose = True
+        self._diagnose_mode = True
 
     def ready_to_train(self):
         if (
@@ -247,21 +247,48 @@ class TrainHelper:
             self._best_test_score = 0.0
 
         self.report_info()
-        logger.warning("[TRAIN] ready to train model")
+
+        # init diagnose flags
+        self._has_checkpoint_load_section=False
+        self._has_train_phase=False
+        self._has_val_phase=False
+        self._has_test_phase=False
+        self._has_checkpoint_save_section=False
+        self._has_best_save_section=False
+        logger.warning("[HELPER] ready to train model")
 
     def report_info(self):
-        logger.warning(f"""[PARAMS]
+        logger.warning(f"""[HELPER]
 device: {self.dev}
+diagnose: {self._diagnose_mode}
 epoch num: {self._epoch_num}
 dataset: train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self, '_data_test') else 'not set'})
 board dir: {self._board_dir}
 checkpoint load/save: {self._load_checkpoint_enabled}/{self._save_checkpoint_enabled}
 custom probes: {self._custom_probes}
         """)
+    
+    def _diagnose(self):
+        logger.warning("==========Diagnose Results==========")
+        if not self._has_checkpoint_load_section:
+            logger.error("checkpoint load not found")
+        if not self._has_train_phase:
+            logger.error("train phase not found")
+        if not self._has_val_phase:
+            logger.error("val phase not found")
+        if not self._has_test_phase:
+            if self._test_phase_enabled:
+                logger.error("test phase not found")
+            else:
+                logger.warning("test phase is disabled")
+        if not self._has_checkpoint_save_section:
+            logger.error("checkpoint saving not found")
+        if not self._has_best_save_section:
+            logger.error("best saving not found")
 
 
     def range_epoch(self):
-        if self._diagnose:
+        if self._diagnose_mode:
             logger.info("you have enable dry-run mode")
             self._epoch_num = 2
         for i in range(self._epoch_num):
@@ -293,33 +320,40 @@ custom probes: {self._custom_probes}
                 self._dataloader_train.sampler.set_epoch(i)
 
             yield i
+        if self._diagnose_mode:
+            self._diagnose()
 
 
     def phase_train(self):
+        self._has_train_phase=True
+
         return PhaseHelper(
             "train",
             self._data_train,
             self._dataloader_train,
             ddp_session=None,
-            dry_run=self._diagnose,
+            dry_run=self._diagnose_mode,
             exit_callback=self.end_phase_callback,
             custom_probes=self._custom_probes.copy(),
         )
 
     def phase_val(self):
+        self._has_val_phase=True
+
         return PhaseHelper(
             "val",
             self._data_val,
             self._dataloader_val,
             ddp_session=None,
-            dry_run=self._diagnose,
+            dry_run=self._diagnose_mode,
             exit_callback=self.end_phase_callback,
             custom_probes=self._custom_probes.copy(),
         )
 
     def phase_test(self):
+        self._has_test_phase=True
+
         need_run = self._test_phase_enabled and self._trigger_run_test
-        self._trigger_run_test = False
         return PhaseHelper(
             "test",
             self._data_test if hasattr(self, "_data_test") else FakeEmptySet(),
@@ -327,7 +361,7 @@ custom probes: {self._custom_probes}
             if hasattr(self, "_dataloader_test")
             else DataLoader(FakeEmptySet()),
             ddp_session=None,
-            dry_run=self._diagnose,
+            dry_run=self._diagnose_mode,
             exit_callback=self.end_phase_callback,
             break_phase=not need_run,
             custom_probes=self._custom_probes.copy(),
