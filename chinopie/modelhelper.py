@@ -35,15 +35,11 @@ class TrainHelper:
             enable_checkpoint: bool,
             checkpoint_save_period: Optional[int],
             comment: str,
-            details: Optional[str] = None,
             dev: str = "",
             enable_ddp=False,
             enable_snapshots=True,
             diagnose: bool = False,
     ) -> None:
-        logger.warning("[HELPER] details for this run")
-        logger.warning(details)
-
         self._epoch_num = epoch_num
         self._batch_size = batch_size
         self._load_checkpoint_enabled = load_checkpoint
@@ -145,7 +141,7 @@ class TrainHelper:
         self._board_dir = checkpoint["board_dir"]
         self._recoverd_epoch = checkpoint["cur_epoch"]
         self._best_val_score = checkpoint["best_val_score"]
-        logger.info(f"[CHECKPOINT] load state from checkpoint")
+        logger.info(f"[HELPER] load state from checkpoint")
 
     def _export_state(self):
         return {
@@ -175,7 +171,7 @@ class TrainHelper:
                 self._dataloader_train.batch_size == self._batch_size
         ), f"batch size of dataloader_train does not match"
         if self._dataloader_val.batch_size != self._batch_size:
-            logger.warning("[HELPER] batch size of dataloader_val does not match")
+            logger.error("[HELPER] batch size of dataloader_val does not match")
 
         if self._ddp_session:
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
@@ -205,7 +201,7 @@ class TrainHelper:
             np.random.seed(seed)
         else:
             logger.info(
-                f"[DDP] fixed seed `{seed + self._ddp_session.get_rank()}` is set for this process"
+                f"[HELPER|DDP] fixed seed `{seed + self._ddp_session.get_rank()}` is set for this process"
             )
             os.environ["PYTHONHASHSEED"] = str(seed + self._ddp_session.get_rank())
             random.seed(seed + self._ddp_session.get_rank())
