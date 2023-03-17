@@ -15,7 +15,6 @@ from torch.utils.data.distributed import DistributedSampler
 import optuna
 from optuna.distributions import CategoricalChoiceType
 import numpy as np
-from prettytable import PrettyTable, PLAIN_COLUMNS
 from loguru import logger
 
 from .probes.avgmeter import AverageMeter, NumericMeter
@@ -42,7 +41,7 @@ class TrainHelper:
         epoch_num: int,
         load_checkpoint: bool,
         save_checkpoint: bool,
-        checkpoint_save_period: Optional[int],
+        checkpoint_save_period: int,
         comment: str,
         dev: str,
         enable_ddp:bool,
@@ -53,10 +52,7 @@ class TrainHelper:
         self._epoch_num = epoch_num
         self._load_checkpoint_enabled = load_checkpoint
         self._save_checkpoint_enabled = save_checkpoint
-        if checkpoint_save_period is not None:
-            self._checkpoint_save_period = checkpoint_save_period
-        else:
-            self._checkpoint_save_period = 1
+        self._checkpoint_save_period = checkpoint_save_period
         self._comment = comment
         # FIXME: should be init in bootstrap
         self._ddp_session = DdpSession() if enable_ddp else None
@@ -568,7 +564,7 @@ class TrainBootstrap:
         load_checkpoint: bool,
         save_checkpoint: bool,
         comment: Optional[str],
-        checkpoint_save_period: Optional[int] = 1,
+        checkpoint_save_period: int = 1,
         enable_snapshot=False,
         dev="",
         diagnose=False,
