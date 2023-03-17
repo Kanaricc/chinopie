@@ -20,6 +20,7 @@ from .ddpsession import DdpSession
 from .filehelper import FileHelper
 from .phasehelper import CheckpointLoadSection, CheckpointSaveSection, PhaseHelper,FunctionalSection
 from .utils import show_params_in_3cols
+from .snapshot import create_snapshot
 
 LOGGER_FORMAT='<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
 
@@ -37,6 +38,7 @@ class TrainHelper:
             details: Optional[str] = None,
             dev: str = "",
             enable_ddp=False,
+            enable_snapshots=True,
             diagnose: bool = False,
     ) -> None:
         logger.warning("[HELPER] details for this run")
@@ -46,6 +48,7 @@ class TrainHelper:
         self._batch_size = batch_size
         self._load_checkpoint_enabled = load_checkpoint
         self._save_checkpoint_enabled = enable_checkpoint
+        self._snapshots_enabled=enable_snapshots
         if checkpoint_save_period is not None:
             self._checkpoint_save_period = checkpoint_save_period
         else:
@@ -249,8 +252,9 @@ class TrainHelper:
 
         # section flag
         self._section_flags={}
-
         self.report_info()
+        if self._snapshots_enabled and not self._diagnose_mode and self._is_main_process():
+            create_snapshot(self._comment)
 
         logger.warning("[HELPER] ready to train model")
     

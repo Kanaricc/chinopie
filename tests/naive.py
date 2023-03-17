@@ -89,6 +89,7 @@ def train(batch_size:int=16):
             phase.end_phase(0.)
         
         with helper.section_checkpoint_save() as s:
+            helper_state=s.helper_state
             if s.should_save_ckpt:
                 pass
             if s.should_save_best:
