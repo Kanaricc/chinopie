@@ -313,6 +313,7 @@ class TrainHelper:
             }
         )
         logger.warning(f"[INFO]\n{table}")
+        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self.trial.params)}")
 
     def _diagnose(self):
         logger.warning("==========Diagnose Results==========")
