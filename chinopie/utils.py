@@ -30,24 +30,29 @@ def create_snapshot(comment:Optional[str]=None):
     g.stash('pop')
     g.reset()
 
-def check_gitignore():
+def check_gitignore(additional_list:List[str]=[]):
     if not os.path.exists('.gitignore'):
         logger.warning("no gitignore found. try creating one.")
         with open('.gitignore','w') as f:
             pass
-    ignore_list=[]
     with open('.gitignore','r') as f:
-        ignore_list=f.readlines()
+        ignore_list=list(map(lambda x:x.strip(),f.readlines()))
+    logger.trace(f"read .gitignore: {ignore_list}")
     
     check_list=[
         "/logs",
         "/opts"
-    ]
+    ]+additional_list
+    has_newline=ignore_list[-1].strip()=='' if len(ignore_list)>0 else True
     with open('.gitignore','a') as f:
         for item in check_list:
             if item not in ignore_list:
-                f.writelines([item])
-                logger.warning("`/logs` not found in .gitignore. appended it.")
+                if not has_newline:
+                    f.write("\n")
+                    has_newline=True
+                f.write(item)
+                f.write("\n")
+                logger.warning(f"`{item}` not found in .gitignore. appended it.")
     logger.info(".gitignore ignored logs and opts correctly")
 
 def show_params_in_3cols(params:Optional[Dict[str,Any]]=None,name:Optional[List[str]]=None,val:Optional[List[Any]]=None):
