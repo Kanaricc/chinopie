@@ -4,6 +4,4 @@ __pycache__
 /*.zip
 *.ipynb
 /exp
-/deps
-/tests/deps
 *.log

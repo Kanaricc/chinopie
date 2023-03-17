@@ -497,7 +497,7 @@ class TrainHelper:
             if not self._test_phase_enabled:
                 self.trial.report(phase.score, self.cur_epoch)
             logger.warning(
-                f"||| END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_train_loss}/{phase.loss_probe.average()}, score {self._last_train_score}/{phase.score} |||"
+                f"=== END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_train_loss}/{phase.loss_probe.average()}, score {self._last_train_score}/{phase.score} ==="
             )
 
         if phase._phase_name == "test":
