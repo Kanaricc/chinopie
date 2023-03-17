@@ -37,7 +37,7 @@ class TrainHelper:
             comment: str,
             dev: str = "",
             enable_ddp=False,
-            enable_snapshots=True,
+            enable_snapshots=False,
             diagnose: bool = False,
     ) -> None:
         self._epoch_num = epoch_num
