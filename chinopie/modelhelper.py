@@ -600,7 +600,7 @@ class TrainBootstrap:
             logger.info("diagnose mode enabled")
         if enable_snapshot:
             if not diagnose:
-                create_snapshot(comment)
+                create_snapshot(self._comment)
                 logger.info("created snapshot")
             else:
                 logger.info("snapshot is disabled in diagnose mode")
