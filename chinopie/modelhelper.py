@@ -5,16 +5,17 @@ import random
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
-import optuna
-from optuna.distributions import CategoricalChoiceType
+
 import torch
 from torch import nn
-import numpy as np
 from torch.functional import Tensor
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
-from prettytable import PrettyTable, PLAIN_COLUMNS
 from torch.utils.data.distributed import DistributedSampler
+import optuna
+from optuna.distributions import CategoricalChoiceType
+import numpy as np
+from prettytable import PrettyTable, PLAIN_COLUMNS
 from loguru import logger
 
 from .probes.avgmeter import AverageMeter, NumericMeter
@@ -25,10 +26,8 @@ from .phasehelper import (
     CheckpointLoadSection,
     CheckpointSaveSection,
     PhaseHelper,
-    FunctionalSection,
 )
-from .utils import show_params_in_3cols
-from .snapshot import create_snapshot
+from .utils import show_params_in_3cols,create_snapshot,check_gitignore
 
 LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 
@@ -537,7 +536,7 @@ class TrainBootstrap:
         self._enable_ddp = False
 
         self._init_logger()
-
+        check_gitignore()
         if self._enable_ddp:
             self._init_ddp()
         if enable_snapshot:
