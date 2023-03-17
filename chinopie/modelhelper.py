@@ -57,8 +57,9 @@ class TrainHelper:
         self._comment = comment
         self._ddp_session = DdpSession() if enable_ddp else None
         self._diagnose_mode=enable_diagnose
-
+        self._argparser=argparse.ArgumentParser()
         self._test_phase_enabled = False
+
 
         # init diagnose flags
         self._has_checkpoint_load_section = False
@@ -66,6 +67,7 @@ class TrainHelper:
         self._has_val_phase = False
         self._has_test_phase = False
         self._has_checkpoint_save_section = False
+        self._has_flushed_params=False
 
         if self._ddp_session:
             self._ddp_session.barrier()
@@ -188,13 +190,34 @@ class TrainHelper:
         self._custom_probes.append(name)
 
     def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
+        self._argparser.add_argument(f"--{name}",required=False)
         self._custom_category_params[name] = value
 
     def reg_int(self, name: str, value: Optional[int] = None):
+        self._argparser.add_argument(f"--{name}",type=int,required=False)
         self._custom_int_params[name] = value
 
     def reg_float(self, name: str, value: Optional[float] = None):
+        self._argparser.add_argument(f"--{name}",type=float,required=False)
         self._custom_float_params[name] = value
+
+    def flush_params(self):
+        self._has_flushed_params=True
+        args,_=self._argparser.parse_known_args()
+        logger.debug(f"hyperparameter in argparser: {args}")
+        for k in self._custom_category_params.keys():
+            if getattr(args,k) is not None:
+                self._custom_category_params[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
+        for k in self._custom_float_params.keys():
+            if getattr(args,k) is not None:
+                self._custom_float_params[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
+        for k in self._custom_int_params.keys():
+            if getattr(args,k) is not None:
+                self._custom_int_params[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
+
 
     def register_fastforward_handler(self, func: Callable[[int], None]):
         self._fastforward_handlers.append(func)
@@ -327,6 +350,8 @@ class TrainHelper:
 
     def _diagnose(self):
         logger.warning("==========Diagnose Results==========")
+        if not self._has_flushed_params:
+            logger.error("args not flushed")
         if not self._has_checkpoint_load_section:
             if self._load_checkpoint_enabled:
                 logger.error("checkpoint loading not found")
@@ -539,20 +564,34 @@ class TrainBootstrap:
         diagnose=False,
         verbose=False,
     ) -> None:
-        self._disk_root = disk_root
-        self._epoch_num = epoch_num
-        if comment is not None:
-            self._comment = comment
+        argparser=argparse.ArgumentParser(
+            prog='ChinoPie'
+        )
+        argparser.add_argument('-r','--disk_root',type=str,default=disk_root)
+        argparser.add_argument('-e','--epoch_num',type=int,default=epoch_num)
+        argparser.add_argument('-l','--load_checkpoint',action='store_true',default=load_checkpoint)
+        argparser.add_argument('-s','--save_checkpoint',action='store_true',default=save_checkpoint)
+        argparser.add_argument('-c','--comment',type=str,default=comment)
+        argparser.add_argument('--dev',type=str,default=dev)
+        argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
+        argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
+        args,_=argparser.parse_known_args()
+        
+
+        self._disk_root = args.disk_root
+        self._epoch_num = args.epoch_num
+        if args.comment is not None:
+            self._comment = args.comment
         else:
             self._comment = datetime.now().strftime("%Y%m%d%H%M%S")
-        self._load_checkpoint = load_checkpoint
-        self._save_checkpoint = save_checkpoint
+        self._load_checkpoint = args.load_checkpoint
+        self._save_checkpoint = args.save_checkpoint
         self._checkpoint_save_period = checkpoint_save_period
-        self._dev = dev
-        self._diagnose_mode = diagnose
+        self._dev = args.dev
+        self._diagnose_mode = args.diagnose
         self._enable_ddp = False
 
-        self._init_logger(verbose)
+        self._init_logger(args.verbose)
         check_gitignore([self._disk_root])
         if self._enable_ddp:
             self._init_ddp()
@@ -639,6 +678,7 @@ class TrainBootstrap:
             comment=f"{self._comment}_trial{trial._trial_id}",
             dev=self._dev,
             enable_ddp=self._enable_ddp,
+            enable_diagnose=self._diagnose_mode
         )
         return self._func(self.helper)
 
