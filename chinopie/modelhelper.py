@@ -58,6 +58,7 @@ class TrainHelper:
         else:
             self._checkpoint_save_period = 1
         self._comment = comment
+        # FIXME: should be init in bootstrap
         self._ddp_session = DdpSession() if enable_ddp else None
         self._diagnose_mode=enable_diagnose
         self._argparser=argparse.ArgumentParser()
@@ -130,9 +131,9 @@ class TrainHelper:
         self._has_checkpoint_load_section = True
         latest_ckpt_path=self.file.find_latest_checkpoint()
         if latest_ckpt_path is not None:
-            logger.debug(f"found latest checkpoint at `{latest_ckpt_path}`")
+            logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
         else:
-            logger.debug(f"no checkpoint found")
+            logger.info(f"no checkpoint found")
 
         break_load_section=not self._load_checkpoint_enabled or latest_ckpt_path is None
         return CheckpointLoadSection(latest_ckpt_path, break_load_section,lambda x:self._load_from_checkpoint(x))
@@ -169,7 +170,7 @@ class TrainHelper:
         load checkpoint file, including model state, epoch index.
         """
         if 'no_checkpoint' in flags:
-            logger.debug("no checkpoint found, skipping helper state recovery")
+            logger.debug("no checkpoint found, skipping helper state recovery.")
             return
         assert 'checked_helper_state' in flags, "helper state not loaded but checkpoint is found"
         checkpoint=flags['checked_helper_state']
@@ -191,6 +192,7 @@ class TrainHelper:
 
     def register_probe(self, name: str):
         self._custom_probes.append(name)
+        logger.debug(f"register probe `{name}`")
 
     def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
         self._argparser.add_argument(f"--{name}",required=False)
@@ -207,7 +209,7 @@ class TrainHelper:
     def flush_params(self):
         self._has_flushed_params=True
         args=self._argparser.parse_args(self._arg_str)
-        logger.debug(f"hyperparameter in argparser: {args}")
+        logger.debug(f"hyperparameters in argparser: {args}")
         for k in self._custom_category_params.keys():
             if getattr(args,k) is not None:
                 self._custom_category_params[k]=getattr(args,k)
@@ -224,6 +226,7 @@ class TrainHelper:
 
     def register_fastforward_handler(self, func: Callable[[int], None]):
         self._fastforward_handlers.append(func)
+        logger.debug(f"register a fastforward handler")
 
     def register_dataset(
         self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
@@ -232,22 +235,26 @@ class TrainHelper:
         self._dataloader_train = trainloader
         self._data_val = val
         self._dataloader_val = valloader
+        logger.debug("registered train and val set")
 
         if self._ddp_session:
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
             assert not isinstance(self._dataloader_val.sampler, DistributedSampler)
+            logger.debug("ddp enabled, checked distributed sampler in train and val set")
 
     def register_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
         self._dataloader_test = testloader
         self._test_phase_enabled = True
+        logger.debug("registered test set. enabled test phase.")
 
         if self._ddp_session:
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
+            logger.debug("ddp enabled, checked distributed sampler in test set")
 
     def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
         if not self._ddp_session or disable_ddp_seed:
-            logger.info("[HELPER] fixed seed is set for random and torch")
+            logger.info("[HELPER] fixed seed set for random and torch")
             os.environ["PYTHONHASHSEED"] = str(seed)
             random.seed(seed)
 
@@ -258,7 +265,7 @@ class TrainHelper:
             np.random.seed(seed)
         else:
             logger.info(
-                f"[HELPER|DDP] fixed seed `{seed + self._ddp_session.get_rank()}` is set for this process"
+                f"[HELPER|DDP] fixed seed `{seed + self._ddp_session.get_rank()}` set for this process"
             )
             os.environ["PYTHONHASHSEED"] = str(seed + self._ddp_session.get_rank())
             random.seed(seed + self._ddp_session.get_rank())
@@ -276,8 +283,10 @@ class TrainHelper:
         fixed_val = self._custom_category_params[name]
         if fixed_val is not None:
             assert fixed_val in choices
+            logger.debug(f"using fixed param `{name}`")
             return fixed_val
         else:
+            logger.debug(f"suggesting dynamic param `{name}`")
             return self.trial.suggest_categorical(name, choices)
 
     def suggest_int(self, name: str, low: int, high: int, step=1, log=False) -> int:
@@ -285,8 +294,10 @@ class TrainHelper:
         fixed_val = self._custom_int_params[name]
         if fixed_val is not None:
             assert fixed_val >= low and fixed_val <= high
+            logger.debug(f"using fixed param `{name}`")
             return fixed_val
         else:
+            logger.debug(f"suggesting dynamic param `{name}`")
             return self.trial.suggest_int(name, low, high, step, log)
 
     def suggest_float(
@@ -301,8 +312,10 @@ class TrainHelper:
         fixed_val = self._custom_float_params[name]
         if fixed_val is not None:
             assert fixed_val >= low and fixed_val <= high
+            logger.debug(f"using fixed param `{name}`")
             return fixed_val
         else:
+            logger.debug(f"suggesting dynamic param `{name}`")
             return self.trial.suggest_float(name, low, high, step=step, log=log)
 
 
@@ -352,7 +365,7 @@ class TrainHelper:
         logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self.trial.params)}")
 
     def _diagnose(self):
-        logger.warning("==========Diagnose Results==========")
+        logger.warning("========== Diagnose Recipe ==========")
         if not self._has_flushed_params:
             logger.error("args not flushed")
         if not self._has_checkpoint_load_section:
@@ -418,12 +431,6 @@ class TrainHelper:
                 logger.warning(
                     f"=== RANK {self._ddp_session.get_rank()} START EPOCH {self.cur_epoch} ==="
                 )
-
-            if self._ddp_session:
-                assert isinstance(
-                    self._dataloader_train.sampler, DistributedSampler
-                ), "DistributedSampler not set for dataloader"
-                self._dataloader_train.sampler.set_epoch(i)
 
             yield i
 
