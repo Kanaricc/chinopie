@@ -1,9 +1,12 @@
+from datetime import datetime
 import os, sys,shutil
 import argparse
 import random
 import inspect
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
+import optuna
+from optuna.distributions import CategoricalChoiceType
 import torch
 from torch import nn
 import numpy as np
@@ -28,23 +31,21 @@ LOGGER_FORMAT='<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level>
 class TrainHelper:
     def __init__(
             self,
+            trial:optuna.Trial,
             disk_root: str,
             epoch_num: int,
-            batch_size: int,
             load_checkpoint: bool,
             enable_checkpoint: bool,
             checkpoint_save_period: Optional[int],
             comment: str,
             dev: str = "",
             enable_ddp=False,
-            enable_snapshots=False,
             diagnose: bool = False,
     ) -> None:
+        self.trial=trial
         self._epoch_num = epoch_num
-        self._batch_size = batch_size
         self._load_checkpoint_enabled = load_checkpoint
         self._save_checkpoint_enabled = enable_checkpoint
-        self._snapshots_enabled=enable_snapshots
         if checkpoint_save_period is not None:
             self._checkpoint_save_period = checkpoint_save_period
         else:
@@ -66,22 +67,7 @@ class TrainHelper:
         self._board_dir = self.file.get_default_board_dir()
 
         if self._ddp_session:
-            world_size = self._ddp_session.get_world_size()
-            assert world_size != -1, "helper must be init after dist"
-            if world_size <= torch.cuda.device_count():
-                self.dev = f"cuda:{self._ddp_session.get_rank()}"
-            else:
-                logger.warning(
-                    f"[DDP] world_size is larger than the number of devices. assume use CPU."
-                )
-                self.dev = f"cpu:{self._ddp_session.get_rank()}"
-
-            # logger file
-            logger.remove()
-            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
-            logger.add(f"log-{self._comment}({self._ddp_session.get_rank()}).log",format=LOGGER_FORMAT)
-
-            logger.warning(f"[DDP] ddp is enabled. current rank is {self._ddp_session.get_rank()}.")
+            logger.info(f"[DDP] ddp is enabled. current rank is {self._ddp_session.get_rank()}.")
             logger.info(
                 f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
             )
@@ -94,12 +80,17 @@ class TrainHelper:
                 logger.info(
                     f"[DDP] rank {self._ddp_session.get_rank()} is the follower. some methods are disabled."
                 )
+            
+            world_size = self._ddp_session.get_world_size()
+            assert world_size != -1, "helper must be init after dist"
+            if world_size <= torch.cuda.device_count():
+                self.dev = f"cuda:{self._ddp_session.get_rank()}"
+            else:
+                logger.warning(
+                    f"[DDP] world_size is larger than the number of devices. assume use CPU."
+                )
+                self.dev = f"cpu:{self._ddp_session.get_rank()}"
         else:
-            # logger file
-            logger.remove()
-            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
-            logger.add(f"log-{self._comment}.log",format=LOGGER_FORMAT)
-
             if dev == "":
                 if torch.cuda.is_available():
                     self.dev = "cuda"
@@ -112,7 +103,9 @@ class TrainHelper:
                 logger.info(f"use custom device `{dev}`")
 
         self._custom_probes = []
-        self._custom_global_params: Dict[str, Any] = {}
+        self._custom_category_params: Dict[str, Optional[CategoricalChoiceType]] = {}
+        self._custom_int_params: Dict[str, Optional[int]] = {}
+        self._custom_float_params: Dict[str, Optional[float]] = {}
         self._fastforward_handlers:List[Callable[[int],None]] = []
         self._diagnose_mode = diagnose
 
@@ -153,9 +146,19 @@ class TrainHelper:
     def register_probe(self, name: str):
         self._custom_probes.append(name)
 
-    def register_global_params(self, name: str, value: Any):
-        self._custom_global_params[name] = value
     
+    def reg_category(self,name:str,value:Optional[CategoricalChoiceType]=None):
+        self._custom_category_params[name]=value
+    
+
+    def reg_int(self,name:str,value:Optional[int]=None):
+        self._custom_int_params[name]=value
+    
+
+    def reg_float(self,name:str,value:Optional[float]=None):
+        self._custom_float_params[name]=value
+
+
     def register_fastforward_handler(self,func:Callable[[int],None]):
         self._fastforward_handlers.append(func)
 
@@ -167,12 +170,6 @@ class TrainHelper:
         self._data_val = val
         self._dataloader_val = valloader
 
-        assert (
-                self._dataloader_train.batch_size == self._batch_size
-        ), f"batch size of dataloader_train does not match"
-        if self._dataloader_val.batch_size != self._batch_size:
-            logger.error("[HELPER] batch size of dataloader_val does not match")
-
         if self._ddp_session:
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
             assert not isinstance(self._dataloader_val.sampler, DistributedSampler)
@@ -180,10 +177,6 @@ class TrainHelper:
     def register_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
         self._dataloader_test = testloader
-
-        assert (
-                self._dataloader_test.batch_size == self._batch_size
-        ), f"batch size of dataloader_test does not match"
 
         if self._ddp_session:
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
@@ -212,9 +205,29 @@ class TrainHelper:
 
             np.random.seed(seed + self._ddp_session.get_rank())
 
-    def get(self, name: str) -> Any:
-        assert name in self._custom_global_params
-        return self._custom_global_params[name]
+    def suggest_category(self, name: str,choices:Sequence[CategoricalChoiceType]) -> CategoricalChoiceType:
+        assert name in self._custom_category_params
+        fixed_val=self._custom_category_params[name]
+        if fixed_val is not None:
+            assert fixed_val in choices
+            return fixed_val
+        else: return self.trial.suggest_categorical(name,choices)
+    
+    def suggest_int(self, name: str,low:int,high:int,step=1,log=False) -> int:
+        assert name in self._custom_int_params
+        fixed_val=self._custom_int_params[name]
+        if fixed_val is not None:
+            assert fixed_val >= low and fixed_val<=high
+            return fixed_val
+        else: return self.trial.suggest_int(name,low,high,step,log)
+    
+    def suggest_float(self, name: str,low:float,high:float,step:Optional[float]=None,log=False) -> float:
+        assert name in self._custom_float_params
+        fixed_val=self._custom_float_params[name]
+        if fixed_val is not None:
+            assert fixed_val >= low and fixed_val<=high
+            return fixed_val
+        else: return self.trial.suggest_float(name,low,high,step=step,log=log)
 
     def set_dry_run(self):
         self._diagnose_mode = True
@@ -249,8 +262,6 @@ class TrainHelper:
         # section flag
         self._section_flags={}
         self.report_info()
-        if self._snapshots_enabled and not self._diagnose_mode and self._is_main_process():
-            create_snapshot(self._comment)
 
         logger.warning("[HELPER] ready to train model")
     
@@ -269,6 +280,7 @@ class TrainHelper:
             "custom probes": self._custom_probes,
         })
         logger.warning(f"[INFO]\n{table}")
+
     
     def _diagnose(self):
         logger.warning("==========Diagnose Results==========")
@@ -323,7 +335,6 @@ class TrainHelper:
                     and self.cur_epoch % self._checkpoint_save_period == 0
             )
             self._trigger_best_score = False
-            self._trigger_state_save = False
             self._trigger_run_test = False
 
             if not self._ddp_session:
@@ -338,6 +349,10 @@ class TrainHelper:
                 self._dataloader_train.sampler.set_epoch(i)
 
             yield i
+            
+            # early stop
+            if self.trial.should_prune():
+                raise optuna.TrialPruned()
         if self._diagnose_mode:
             self._diagnose()
 
@@ -436,63 +451,101 @@ class TrainHelper:
             if phase.score >= self._best_val_score or self._diagnose_mode:
                 self._best_val_score = phase.score
                 self._trigger_run_test = True
+                # if having no test phase, store best result according to val score
                 if self._save_checkpoint_enabled and not self._test_phase_enabled:
-                    self._trigger_best_score = True
-                    self._trigger_state_save = True
+                    self._trigger_best_score = True    
             
+            # report intermediate score if having no test phase
+            if not self._test_phase_enabled:
+                self.trial.report(phase.score,self.cur_epoch)
             logger.warning(
                 f"||| END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_train_loss}/{phase.loss_probe.average()}, score {self._last_train_score}/{phase.score} |||"
             )
+
         if phase._phase_name=='test':
             if phase.score >=self._best_test_score or self._diagnose_mode:
                 self._best_test_score=phase.score
                 if self._save_checkpoint_enabled:
                     self._trigger_best_score = True
-                    self._trigger_state_save = True
+            
+            # report intermediate score
+            self.trial.report(phase.score,self.cur_epoch)
 
 
-    @staticmethod
-    def auto_bind_and_run(func):
-        logger.remove()
-        logger.add(sys.stderr,format=LOGGER_FORMAT)
-        temp = logger.add(f"log.log",format=LOGGER_FORMAT)
+class TrainBootstrap:
+    def __init__(self,disk_root:str,epoch_num:int,load_checkpoint: bool,enable_checkpoint: bool,comment:Optional[str],checkpoint_save_period: Optional[int]=1,enable_snapshot=False,dev="",diagnose=False) -> None:
+        self._disk_root=disk_root
+        self._epoch_num=epoch_num
+        if comment is not None:
+            self._comment=comment
+        else:
+            self._comment=datetime.now().strftime("%Y%m%d%H%M%S")
+        self._load_checkpoint=load_checkpoint
+        self._enable_checkpoint=enable_checkpoint
+        self._checkpoint_save_period=checkpoint_save_period
+        self._dev=dev
+        self._diagnose=diagnose
+        self._enable_ddp=False
 
-        sig = inspect.signature(func)
-        params = sig.parameters
-        parser = argparse.ArgumentParser(description="TrainHelper")
-        for param_name, param in params.items():
-            if param.default != inspect.Parameter.empty:
-                parser.add_argument(
-                    f"--{param_name}", default=param.default, type=param.annotation
-                )
-            else:
-                parser.add_argument(
-                    f"--{param_name}", type=param.annotation, required=True
-                )
-
-        args = vars(parser.parse_args())
-
-        active_results = {}
-        name,val,changed=[],[],[]
-        for param_name, param in params.items():
-            env_input = args[param_name]
-            if env_input != param.default:
-                active_results[param_name] = env_input
-                name.append(f"*{param_name}")
-                val.append(env_input)
-            else:
-                assert (
-                        param.default != inspect.Parameter.empty
-                ), f"you did not set parameter `{param_name}`"
-                active_results[param_name] = param.default
-                name.append(f"{param_name}")
-                val.append(param.default)
+        self._init_logger()
         
-        table=show_params_in_3cols(name=name,val=val)
-        logger.warning(f"[HYPERPARAMETERS]\n{table}")
-        
-        logger.remove(temp)
-        func(**active_results)
+        if self._enable_ddp:
+            self._init_ddp()
+        if enable_snapshot:
+            create_snapshot(comment)
+            logger.info("created snapshot")
+    
+    def _init_ddp(self):
+        self._ddp_session=DdpSession()
+        logger.info("initialized ddp")
+    
+    def _is_main_process(self):
+        return self._ddp_session is None or self._ddp_session.is_main_process()
+
+    def _init_logger(self):
+        # logger file
+        if not os.path.exists('logs'):
+            os.mkdir('logs')
+        if self._enable_ddp:
+            logger.remove()
+            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
+            logger.add(f"logs/log_{self._comment}_r{self._ddp_session.get_rank()}.log",format=LOGGER_FORMAT)
+        else:
+            logger.remove()
+            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
+            logger.add(f"logs/log_{self._comment}.log",format=LOGGER_FORMAT)
+        logger.info("initialized logger")
+    
+    def optimize(self,
+                 func:Callable[[TrainHelper],float|Sequence[float]],
+                 n_trials:int
+                 ):
+        if not os.path.exists('opts'):
+            os.mkdir('opts')
+        self._func=func
+        storage_path=os.path.join('opts',f"{self._comment}.db")
+        study=optuna.create_study(storage=f'sqlite:///{storage_path}')
+        study.optimize(self._wrapper,n_trials=n_trials,gc_after_trial=True)
+
+        best_params=study.best_params
+        best_value=study.best_value
+        logger.warning("[BOOPSTRAP] finish optimization")
+        logger.warning(f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}")
+        logger.warning(f"[BOOTSTRAP] best score: {best_value}")
+        logger.warning("[BOOTSTRAP] good luck!")
+    
+    def _wrapper(self,trial:optuna.Trial)->float | Sequence[float]:
+        helper=TrainHelper(trial,
+                           disk_root=self._disk_root,
+                           epoch_num=self._epoch_num,
+                           load_checkpoint=self._load_checkpoint,
+                           enable_checkpoint=self._enable_checkpoint,
+                           checkpoint_save_period=self._checkpoint_save_period,
+                           comment=self._comment,
+                           dev=self._dev,
+                           enable_ddp=self._enable_ddp,
+                           diagnose=self._diagnose)
+        return self._func(helper)
 
 
 def gettype(name):
