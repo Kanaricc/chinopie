@@ -29,24 +29,27 @@ from .phasehelper import (
 )
 from .utils import show_params_in_3cols,create_snapshot,check_gitignore
 
-LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+# LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
 
 
 class TrainHelper:
     def __init__(
         self,
         trial: optuna.Trial,
+        arg_str:Sequence[str],
         disk_root: str,
         epoch_num: int,
         load_checkpoint: bool,
         save_checkpoint: bool,
         checkpoint_save_period: Optional[int],
         comment: str,
-        dev: str = "",
-        enable_ddp=False,
-        enable_diagnose=False,
+        dev: str,
+        enable_ddp:bool,
+        enable_diagnose:bool,
     ) -> None:
         self.trial = trial
+        self._arg_str=arg_str
         self._epoch_num = epoch_num
         self._load_checkpoint_enabled = load_checkpoint
         self._save_checkpoint_enabled = save_checkpoint
@@ -203,7 +206,7 @@ class TrainHelper:
 
     def flush_params(self):
         self._has_flushed_params=True
-        args,_=self._argparser.parse_known_args()
+        args=self._argparser.parse_args(self._arg_str)
         logger.debug(f"hyperparameter in argparser: {args}")
         for k in self._custom_category_params.keys():
             if getattr(args,k) is not None:
@@ -575,7 +578,7 @@ class TrainBootstrap:
         argparser.add_argument('--dev',type=str,default=dev)
         argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
-        args,_=argparser.parse_known_args()
+        args,self._extra_arg_str=argparser.parse_known_args()
         
 
         self._disk_root = args.disk_root
@@ -670,6 +673,7 @@ class TrainBootstrap:
     def _wrapper(self, trial: optuna.Trial) -> float | Sequence[float]:
         self.helper = TrainHelper(
             trial,
+            arg_str=self._extra_arg_str,
             disk_root=self._disk_root,
             epoch_num=self._epoch_num,
             load_checkpoint=self._load_checkpoint,
