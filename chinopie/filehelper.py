@@ -36,10 +36,13 @@ class FileHelper:
             logger.debug("waited for filehelper distributed initialization")
 
         self.ckpt_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
+        # self.board_dir = os.path.join(
+        #     self.disk_root,
+        #     DIR_TENSORBOARD,
+        #     f"{self.comment}-{datetime.now().strftime('%Y.%m.%d.%H.%M.%S')}",
+        # )
         self.board_dir = os.path.join(
-            self.disk_root,
-            DIR_TENSORBOARD,
-            f"{self.comment}-{datetime.now().strftime('%Y.%m.%d.%H.%M.%S')}",
+            self.disk_root,DIR_TENSORBOARD,self.comment,
         )
 
     def prepare_checkpoint_dir(self):
