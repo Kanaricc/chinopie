@@ -62,12 +62,14 @@ class TrainHelper:
 
 
         # init diagnose flags
-        self._has_checkpoint_load_section = False
-        self._has_train_phase = False
-        self._has_val_phase = False
-        self._has_test_phase = False
-        self._has_checkpoint_save_section = False
-        self._has_flushed_params=False
+        self._has_sections={
+            'checkpoint_load':False,
+            'checkpoint_save':False,
+            'train_phase':False,
+            'val_phase':False,
+            'test_phase':False,
+            'params_flush':False,
+        }
 
         if self._ddp_session:
             self._ddp_session.barrier()
@@ -124,7 +126,7 @@ class TrainHelper:
         return self._ddp_session is None or self._ddp_session.is_main_process()
 
     def section_checkpoint_load(self):
-        self._has_checkpoint_load_section = True
+        self._has_sections['checkpoint_load']=True
         latest_ckpt_path=self.file.find_latest_checkpoint()
         if latest_ckpt_path is not None:
             logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
@@ -135,7 +137,7 @@ class TrainHelper:
         return CheckpointLoadSection(latest_ckpt_path, break_load_section,lambda x:self._load_from_checkpoint(x))
 
     def section_checkpoint_save(self):
-        self._has_checkpoint_save_section = True
+        self._has_sections['checkpoint_save']=True
 
         flag_save = (
             self._is_main_process()
@@ -191,19 +193,22 @@ class TrainHelper:
         logger.debug(f"register probe `{name}`")
 
     def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
-        self._argparser.add_argument(f"--{name}",required=False)
-        self._custom_category_params[name] = value
+        if name not in self._custom_category_params:
+            self._argparser.add_argument(f"--{name}",required=False)
+            self._custom_category_params[name] = value
 
     def reg_int(self, name: str, value: Optional[int] = None):
-        self._argparser.add_argument(f"--{name}",type=int,required=False)
-        self._custom_int_params[name] = value
+        if name not in self._custom_int_params:
+            self._argparser.add_argument(f"--{name}",type=int,required=False)
+            self._custom_int_params[name] = value
 
     def reg_float(self, name: str, value: Optional[float] = None):
-        self._argparser.add_argument(f"--{name}",type=float,required=False)
-        self._custom_float_params[name] = value
+        if name not in self._custom_float_params:
+            self._argparser.add_argument(f"--{name}",type=float,required=False)
+            self._custom_float_params[name] = value
 
     def flush_params(self):
-        self._has_flushed_params=True
+        self._has_sections['params_flush']=True
         args=self._argparser.parse_args(self._arg_str)
         logger.debug(f"hyperparameters in argparser: {args}")
         for k in self._custom_category_params.keys():
@@ -362,23 +367,23 @@ class TrainHelper:
 
     def _diagnose(self):
         logger.warning("========== Diagnose Recipe ==========")
-        if not self._has_flushed_params:
+        if not self._has_sections['params_flush']:
             logger.error("args not flushed")
-        if not self._has_checkpoint_load_section:
+        if not self._has_sections['checkpoint_load']:
             if self._load_checkpoint_enabled:
                 logger.error("checkpoint loading not found")
             else:
                 logger.warning("checkpoint loading not found but is disabled")
-        if not self._has_train_phase:
+        if not self._has_sections['train_phase']:
             logger.error("train phase not found")
-        if not self._has_val_phase:
+        if not self._has_sections['val_phase']:
             logger.error("val phase not found")
-        if not self._has_test_phase:
+        if not self._has_sections['test_phase']:
             if self._test_phase_enabled:
                 logger.error("test phase not found")
             else:
                 logger.warning("test phase not found but is disabled")
-        if not self._has_checkpoint_save_section:
+        if not self._has_sections['checkpoint_save']:
             if self._save_checkpoint_enabled:
                 logger.error("checkpoint saving not found")
             else:
@@ -435,7 +440,7 @@ class TrainHelper:
                 raise optuna.TrialPruned()
 
     def phase_train(self):
-        self._has_train_phase = True
+        self._has_sections['train_phase']=True
         assert hasattr(self,'cur_epoch'), "the phase should be called in epoch"
         return PhaseHelper(
             "train",
@@ -448,7 +453,7 @@ class TrainHelper:
         )
 
     def phase_val(self):
-        self._has_val_phase = True
+        self._has_sections['val_phase']=True
         assert hasattr(self,'cur_epoch'), "the phase should be called in epoch"
         return PhaseHelper(
             "val",
@@ -461,7 +466,8 @@ class TrainHelper:
         )
 
     def phase_test(self):
-        self._has_test_phase = True
+        self._has_sections['test_phase']=True
+
         assert hasattr(self,'cur_epoch'), "the phase should be called in epoch"
 
         need_run = self._test_phase_enabled and self._trigger_run_test
@@ -643,12 +649,17 @@ class TrainBootstrap:
         logger.info("initialized logger")
 
     def optimize(
-        self, func: Callable[[TrainHelper], float | Sequence[float]], n_trials: int
+        self, func: Callable[[TrainHelper], float | Sequence[float]], n_trials: int, phase:Optional[int]=None,
     ):
+        if phase is None:
+            phase_comment=self._comment
+        else:
+            phase_comment=f"{self._comment}({phase})"
+        
         if not os.path.exists("opts"):
             os.mkdir("opts")
         self._func = func
-        storage_path = os.path.join("opts", f"{self._comment}.db")
+        storage_path = os.path.join("opts", f"{phase_comment}.db")
         # do not save storage in diagnose mode
         if self._diagnose_mode:
             storage_path=None
@@ -659,7 +670,7 @@ class TrainBootstrap:
         # in diagnose mode, run 3 times only
         if self._diagnose_mode:
             n_trials=3
-        study.optimize(self._wrapper, n_trials=n_trials, gc_after_trial=True)
+        study.optimize(lambda x: self._wrapper(x,phase_comment), n_trials=n_trials, gc_after_trial=True)
 
         if self._diagnose_mode:
             self.helper._diagnose()
@@ -673,7 +684,7 @@ class TrainBootstrap:
             logger.warning(f"[BOOTSTRAP] best score: {best_value}")
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper(self, trial: optuna.Trial) -> float | Sequence[float]:
+    def _wrapper(self, trial: optuna.Trial, comment:str) -> float | Sequence[float]:
         self.helper = TrainHelper(
             trial,
             arg_str=self._extra_arg_str,
@@ -682,7 +693,7 @@ class TrainBootstrap:
             load_checkpoint=self._load_checkpoint,
             save_checkpoint=self._save_checkpoint,
             checkpoint_save_period=self._checkpoint_save_period,
-            comment=f"{self._comment}_trial{trial._trial_id}",
+            comment=f"{comment}_trial{trial._trial_id}",
             dev=self._dev,
             enable_ddp=self._enable_ddp,
             enable_diagnose=self._diagnose_mode

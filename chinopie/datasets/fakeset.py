@@ -60,7 +60,24 @@ class FakeRandomSet(Dataset):
             'input':input,
             'target':output,
         }
+
+class FakeNormalSet(Dataset):
+    def __init__(self, mean:float, std:float, dim_feat:int, size:int) -> None:
+        self._mean=mean
+        self._std=std
+        self._dim_feat=dim_feat
+        self._size=size
     
+    def __len__(self):
+        return self._size
+    
+    def __getitem__(self, index:int) -> FakeOutput:
+        input=torch.normal(self._mean,self._std,size=(self._dim_feat,))
+
+        return {
+            'input':input,
+            'target':torch.tensor(self._std),
+        }
 
 def generate_similar_tensor(tensor:Tensor):
     if tensor.dtype==torch.float:
