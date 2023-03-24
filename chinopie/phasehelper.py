@@ -8,7 +8,7 @@ from torch import Tensor
 from loguru import logger
 from tqdm import tqdm
 
-from .probes import AverageMeter,NumericMeter
+from .probes import AverageMeter,SmoothMeanMeter
 from .ddpsession import DdpSession
 
 class FunctionalSection:
@@ -106,7 +106,6 @@ class PhaseHelper:
             exit_callback: Callable[[Self], None] = lambda x: None,
             break_phase: bool = False,
     ) -> None:
-        self._output_updated = True
         self._phase_name = phase_name
         self._dry_run = dry_run
         self._ddp_session = ddp_session
@@ -131,8 +130,12 @@ class PhaseHelper:
         if self._is_main_process():
             with tqdm(total=batch_len,ncols=64) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
+                    if self._dry_run:
+                        logger.info("data preview")
+                        logger.info(data)
                     yield batchi, data
                     progressbar.update()
+                    progressbar.set_postfix({'loss':self._realtime_loss_probe})
                     if self._dry_run and batchi>=2:
                         break
         else:
@@ -144,7 +147,7 @@ class PhaseHelper:
     def __enter__(self):
         self._score = 0.0
         self._loss_probe = AverageMeter("")
-        self._output_dist_probes = []
+        self._realtime_loss_probe=SmoothMeanMeter()
         self._custom_probes = dict(
             [(x, AverageMeter(x)) for x in self._custom_probe_name]
         )
@@ -199,15 +202,7 @@ class PhaseHelper:
         self._loss_updated = True
         self.validate_loss(loss)
         self._loss_probe.update(loss.item(), n)
-
-    def update_output(self, *outputs):
-        for k, v in enumerate(outputs):
-            assert type(v) == Tensor
-            self.validate_tensor(v)
-            if len(self._output_dist_probes) - 1 < k:
-                self._output_dist_probes.append(NumericMeter(f"{k}"))
-
-            self._output_dist_probes[k].update(v.cpu().detach())
+        self._realtime_loss_probe.add(loss.item(),n)
 
     def end_phase(self, score: float):
         self._score_updated = True
