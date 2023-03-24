@@ -17,7 +17,7 @@ from optuna.distributions import CategoricalChoiceType
 import numpy as np
 from loguru import logger
 
-from .probes.avgmeter import AverageMeter, NumericMeter
+from .probes.avgmeter import AverageMeter
 from .datasets.fakeset import FakeEmptySet
 from .ddpsession import DdpSession
 from .filehelper import FileHelper
@@ -486,19 +486,7 @@ class TrainHelper:
 
     def end_phase_callback(self, phase: PhaseHelper):
         assert phase._phase_name in ["train", "val", "test"]
-        # collect probes
-        if self._ddp_session is None:
-            output_dist_probes = phase._output_dist_probes
-        else:
-            gathered_output_dist_probes: List[List[NumericMeter]] = []
-            self._ddp_session.gather_object(
-                phase._output_dist_probes, gathered_output_dist_probes, 0
-            )
-            output_dist_probes = gathered_output_dist_probes[0]
-            for i in gathered_output_dist_probes[1:]:
-                for dst, src in zip(output_dist_probes, i):
-                    dst.update(src.val)
-            del gathered_output_dist_probes
+        # TODO: collect probes
 
         # only log probes in main process
         if self._is_main_process():
@@ -507,12 +495,6 @@ class TrainHelper:
                 f"loss/{phase._phase_name}", phase.loss_probe.average(), self.cur_epoch
             )
             self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
-
-            for k, v in enumerate(output_dist_probes):
-                if v.val.numel() > 0:
-                    self.tbwriter.add_histogram(
-                        f"outdist/{phase._phase_name}/{k}", v.val, self.cur_epoch
-                    )
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
@@ -677,14 +659,21 @@ class TrainBootstrap:
         else:
             best_params = study.best_params
             best_value = study.best_value
+            best_trial=study.best_trial
             logger.warning("[BOOPSTRAP] finish optimization")
             logger.warning(
                 f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
             )
             logger.warning(f"[BOOTSTRAP] best score: {best_value}")
+
+            target_helper=FileHelper(self._disk_root,f"{phase_comment}")
+            shutil.copytree(self.helper._board_dir,target_helper.board_dir)
+            shutil.copytree(self.helper.file.ckpt_dir,target_helper.ckpt_dir)
+            logger.info("copied best trial as the final result")
         logger.warning("[BOOTSTRAP] good luck!")
 
     def _wrapper(self, trial: optuna.Trial, comment:str) -> float | Sequence[float]:
+        self._cur_trial=trial
         self.helper = TrainHelper(
             trial,
             arg_str=self._extra_arg_str,
