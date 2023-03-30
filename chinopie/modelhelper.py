@@ -26,6 +26,7 @@ from .phasehelper import (
     CheckpointSaveSection,
     PhaseHelper,
 )
+from .recipe import ModuleRecipe
 from .utils import show_params_in_3cols,create_snapshot,check_gitignore
 
 # LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
@@ -631,7 +632,7 @@ class TrainBootstrap:
         logger.info("initialized logger")
 
     def optimize(
-        self, func: Callable[[TrainHelper], float | Sequence[float]], n_trials: int, phase:Optional[int]=None,
+        self, recipe:ModuleRecipe, n_trials: int, phase:Optional[int]=None,
     ):
         if phase is None:
             phase_comment=self._comment
@@ -640,7 +641,6 @@ class TrainBootstrap:
         
         if not os.path.exists("opts"):
             os.mkdir("opts")
-        self._func = func
         storage_path = os.path.join("opts", f"{phase_comment}.db")
         # do not save storage in diagnose mode
         if self._diagnose_mode:
@@ -652,7 +652,7 @@ class TrainBootstrap:
         # in diagnose mode, run 3 times only
         if self._diagnose_mode:
             n_trials=3
-        study.optimize(lambda x: self._wrapper(x,phase_comment), n_trials=n_trials, gc_after_trial=True)
+        study.optimize(lambda x: self._wrapper(x,recipe,phase_comment), n_trials=n_trials, gc_after_trial=True)
 
         if self._diagnose_mode:
             self.helper._diagnose()
@@ -672,8 +672,7 @@ class TrainBootstrap:
             logger.info("copied best trial as the final result")
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper(self, trial: optuna.Trial, comment:str) -> float | Sequence[float]:
-        self._cur_trial=trial
+    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, comment:str) -> float | Sequence[float]:
         self.helper = TrainHelper(
             trial,
             arg_str=self._extra_arg_str,
@@ -687,7 +686,8 @@ class TrainBootstrap:
             enable_ddp=self._enable_ddp,
             enable_diagnose=self._diagnose_mode
         )
-        return self._func(self.helper)
+        recipe._set_global_deps(self.helper)
+        return recipe.fit()
 
 
 def gettype(name):
