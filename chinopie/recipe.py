@@ -1,67 +1,77 @@
-from typing import Sequence,Any
+from typing import Sequence,Any,Dict
 from abc import ABC
 import torch
 from torch import nn,Tensor
 from torch.utils.data import DataLoader
+from torch.optim import Optimizer
 from chinopie.modelhelper import TrainHelper
 from chinopie.phasehelper import PhaseHelper
 
 class ModuleRecipe:
     def __init__(self) -> None:
+        pass
+
+    def prepare(self,helper:TrainHelper):
         ...
     
-    def _set_global_deps(self,helper:TrainHelper):
-        self._helper=helper
-        self._model:nn.Module=None
+    def set_optimizing_params(self,model,opti):
+        raise NotImplemented
     
     @property
     def model(self):
         return self._model
     
     @property
-    def trainset(self):
-        return self._helper._data_train,self._helper._dataloader_train
+    def optimizer(self):
+        return self._optimizer
     
-    @property
-    def valset(self):
-        return self._helper._data_val,self._helper._dataloader_val
-    
-    @property
-    def testset(self):
-        return self._helper._data_test,self._helper._dataloader_test
-    
-    def run_train_phase(self,dataloader:DataLoader):
+    def run_train_phase(self,p:PhaseHelper):
         self.model.train()
-        for data in dataloader:
-            self.run_train_iter(data)
-        pass
+        for batchi,data in p.range_data():
+            # TODO: check device
+            self.run_train_iter(data,p)
+        p.end_phase(self.report_score('train'))
 
-    def run_val_phase(self,dataloader:DataLoader):
+    def run_val_phase(self,p:PhaseHelper):
         self.model.eval()
-        for data in dataloader:
-            self.run_val_iter(data)
-        pass
+        for batchi,data in p.range_data():
+            self.run_val_iter(data,p)
+        p.end_phase(self.report_score('val'))
 
-    def run_test_phase(self,dataloader:DataLoader):
+    def run_test_phase(self,p:PhaseHelper):
         self.model.eval()
-        for data in dataloader:
-            self.run_test_iter(data)
+        for batchi,data in p.range_data():
+            self.run_test_iter(data,p)
         pass
+        p.end_phase(self.report_score('test'))
     
-    def run_train_iter(self,data:Any):
+    def run_train_iter(self,data:Any,p:PhaseHelper):
         output=self.forward(data)
         loss=self.cal_loss(data,output)
-        self.update_probe()
+
+        # TODO: optimizer models
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        p.update_loss(loss.detach().cpu())
+        self.update_probe(data,output.detach().cpu(),p)
+        self.after_iter(data,output,'train')
     
-    def run_val_iter(self,data):
+    def run_val_iter(self,data,p:PhaseHelper):
         with torch.no_grad():
             output=self.forward(data)
             loss=self.cal_loss(data,output)
+            p.update_loss(loss.detach().cpu())
+            self.update_probe(data,output.detach().cpu(),p)
+        self.after_iter(data,output,'val')
     
-    def run_test_iter(self,data):
+    def run_test_iter(self,data,p:PhaseHelper):
         with torch.no_grad():
             output=self.forward(data)
             loss=self.cal_loss(data,output)
+            p.update_loss(loss.detach().cpu())
+            self.update_probe(data,output.detach().cpu(),p)
+        self.after_iter(data,output,'test')
     
     def forward(self,data)->Tensor:
         raise NotImplemented
@@ -69,16 +79,32 @@ class ModuleRecipe:
     def cal_loss(self,data,output:Tensor)->Tensor:
         raise NotImplemented
     
-    def update_probe(self):
+    def update_probe(self,data,output,p:PhaseHelper):
         raise NotImplemented
+    
+    def after_iter(self,data,output,phase:str):
+        ...
+    
+    def report_score(self,phase:str)->float:
+        ...
 
-    def restore_ckpt(self,ckpt):
-        raise NotImplemented
+    def restore_ckpt(self,ckpt:str)->Dict[str,Any]:
+        data=torch.load(ckpt,map_location='cpu')
+        self.model.load_state_dict(data['model'])
+        self.optimizer.load_state_dict(data['optimizer'])
+        return data['extra']
     
-    def export_ckpt(self):
-        raise NotImplemented
+    def save_ckpt(self,ckpt:str,extra_state:Any):
+        data={
+            'model':self.model.state_dict(),
+            'optimizer':self.optimizer.state_dict(),
+            'extra':extra_state,
+        }
+        torch.save(data,ckpt)
     
-    def fit(self)->float|Sequence[float]:
-        for epochi in self._helper.range_epoch():
-            with self._helper.phase_train() as p:
+    def before_epoch(self):
+        ...
+
+    def after_epoch(self):
+        ...
                 

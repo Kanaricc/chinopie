@@ -40,61 +40,8 @@ class FunctionalSection:
         if self._report_cb:
             self._report_cb(self._state)
 
-class CheckpointSaveSection(FunctionalSection):
-    def __init__(self, helper_states: Dict[str,Any], ckpt_slot:str,best_slot:str, save_ckpt:bool, save_best:bool, break_phase: bool,report_cb:Optional[Callable[[Dict[str,Any]],None]]) -> None:
-        super().__init__(break_phase,report_cb)
-
-        self._ckpt_slot=ckpt_slot
-        self._best_slot=best_slot
-        self._helper_states=helper_states
-        self._save_ckpt=save_ckpt
-        self._save_best=save_best
-    
-    @property
-    def ckpt_slot(self):
-        self.set('checked_ckpt_slot',True)
-        return self._ckpt_slot
-    
-    @property
-    def best_slot(self):
-        self.set('checked_best_slot')
-        return self._best_slot
-    
-    @property
-    def helper_state(self):
-        self.set("checked_helper_state",True)
-        return self._helper_states
-    
-    @property
-    def should_save_ckpt(self):
-        self.set("checked_save_ckpt",True)
-        return self._save_ckpt
-    
-    @property
-    def should_save_best(self):
-        self.set("checked_save_best",True)
-        return self._save_best
-
-class CheckpointLoadSection(FunctionalSection):
-    def __init__(self, latest_slot:Optional[str], break_phase: bool,report_cb:Callable[[Dict[str,Any]],None]) -> None:
-        super().__init__(break_phase,report_cb)
-
-        self._latest_slot=latest_slot
-        if latest_slot is None:
-            self.set("no_checkpoint",True)
-    
-    @property
-    def latest_slot(self):
-        assert self._latest_slot is not None
-        return self._latest_slot
-    
-    def load_helper_state(self,state:Dict[str,Any]):
-        self.set("checked_helper_state",state)
 
 class PhaseHelper:
-    class JumpPhaseException(Exception):
-        pass
-
     def __init__(
             self,
             phase_name: str,
@@ -103,7 +50,6 @@ class PhaseHelper:
             ddp_session: Optional[DdpSession] = None,
             dry_run: bool = False,
             custom_probes: List[str] = [],
-            exit_callback: Callable[[Self], None] = lambda x: None,
             break_phase: bool = False,
     ) -> None:
         self._phase_name = phase_name
@@ -113,7 +59,6 @@ class PhaseHelper:
         self._dataloader = dataloader
 
         self._custom_probe_name = custom_probes
-        self._exit_callback = exit_callback
         self._break_phase = break_phase
 
     def get_data_sample(self):
@@ -121,11 +66,6 @@ class PhaseHelper:
             return data
 
     def range_data(self):
-        if self._break_phase:
-            self._loss_updated = True
-            self._score_updated = True
-            raise self.JumpPhaseException
-
         batch_len = len(self._dataloader)
         if self._is_main_process():
             with tqdm(total=batch_len,ncols=64) as progressbar:
@@ -158,9 +98,6 @@ class PhaseHelper:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type == self.JumpPhaseException:
-            return True
-
         if not self._score_updated:
             logger.error(f"no score updated during phase {self._phase_name}")
         if not self._loss_updated:
@@ -168,8 +105,6 @@ class PhaseHelper:
 
         for name in self._custom_probe_name:
             logger.error(f"{name} not updated during phase {self._phase_name}")
-
-        self._exit_callback(self)
 
     def update_probe(self, name: str, value: float, n: int = 1):
         if name in self._custom_probe_name:

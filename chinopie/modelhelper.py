@@ -22,8 +22,6 @@ from .datasets.fakeset import FakeEmptySet
 from .ddpsession import DdpSession
 from .filehelper import FileHelper
 from .phasehelper import (
-    CheckpointLoadSection,
-    CheckpointSaveSection,
     PhaseHelper,
 )
 from .recipe import ModuleRecipe
@@ -39,10 +37,6 @@ class TrainHelper:
         trial: optuna.Trial,
         arg_str:Sequence[str],
         disk_root: str,
-        epoch_num: int,
-        load_checkpoint: bool,
-        save_checkpoint: bool,
-        checkpoint_save_period: int,
         comment: str,
         dev: str,
         enable_ddp:bool,
@@ -50,27 +44,12 @@ class TrainHelper:
     ) -> None:
         self.trial = trial
         self._arg_str=arg_str
-        self._epoch_num = epoch_num
-        self._load_checkpoint_enabled = load_checkpoint
-        self._save_checkpoint_enabled = save_checkpoint
-        self._checkpoint_save_period = checkpoint_save_period
         self._comment = comment
         # FIXME: should be init in bootstrap
         self._ddp_session = DdpSession() if enable_ddp else None
         self._diagnose_mode=enable_diagnose
         self._argparser=argparse.ArgumentParser()
         self._test_phase_enabled = False
-
-
-        # init diagnose flags
-        self._has_sections={
-            'checkpoint_load':False,
-            'checkpoint_save':False,
-            'train_phase':False,
-            'val_phase':False,
-            'test_phase':False,
-            'params_flush':False,
-        }
 
         if self._ddp_session:
             self._ddp_session.barrier()
@@ -120,115 +99,20 @@ class TrainHelper:
         self._custom_category_params: Dict[str, Optional[CategoricalChoiceType]] = {}
         self._custom_int_params: Dict[str, Optional[int]] = {}
         self._custom_float_params: Dict[str, Optional[float]] = {}
-        self._fastforward_handlers: List[Callable[[int], None]] = []
+        self._fastforward_handlers: List[Callable[[], None]] = []
 
 
     def _is_main_process(self):
         return self._ddp_session is None or self._ddp_session.is_main_process()
 
-    def section_checkpoint_load(self):
-        self._has_sections['checkpoint_load']=True
-        latest_ckpt_path=self.file.find_latest_checkpoint()
-        if latest_ckpt_path is not None:
-            logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
-        else:
-            logger.info(f"no checkpoint found")
-
-        break_load_section=not self._load_checkpoint_enabled or latest_ckpt_path is None
-        return CheckpointLoadSection(latest_ckpt_path, break_load_section,lambda x:self._load_from_checkpoint(x))
-
-    def section_checkpoint_save(self):
-        self._has_sections['checkpoint_save']=True
-
-        flag_save = (
-            self._is_main_process()
-            and self._save_checkpoint_enabled
-            and self._trigger_checkpoint
-        )
-        flag_best = (
-            self._is_main_process()
-            and self._save_checkpoint_enabled
-            and self._trigger_best_score
-        )
-
-        # force saving ckpt in diagnose mode
-        flag_best=True
-        flag_save=True
-        return CheckpointSaveSection(
-            self._export_state(),
-            self.file.get_checkpoint_slot(self.cur_epoch),
-            self.file.get_best_checkpoint_slot(),
-            flag_save,
-            flag_best,
-            not (flag_save or flag_best),
-            lambda x: self._merge_section_flags(x),
-        )
-
-    def _load_from_checkpoint(self, flags: Dict[str, Any]):
-        """
-        load checkpoint file, including model state, epoch index.
-        """
-        if 'no_checkpoint' in flags:
-            logger.debug("no checkpoint found, skipping helper state recovery.")
-            return
-        assert 'checked_helper_state' in flags, "helper state not loaded but checkpoint is found"
-        checkpoint=flags['checked_helper_state']
-
-        self._board_dir = checkpoint["board_dir"]
-        self._recoverd_epoch = checkpoint["cur_epoch"]
-        self._best_val_score = checkpoint["best_val_score"]
-        if 'best_test_score' in checkpoint:
-            self._best_test_score = checkpoint["best_test_score"]
-        logger.info(f"[HELPER] load state from checkpoint")
-
-    def _export_state(self):
-        # FIXME: no test score
-        return {
-            "board_dir": self._board_dir,
-            "cur_epoch": self.cur_epoch,
-            "best_val_score": self._best_val_score,
-        }
-
     def register_probe(self, name: str):
         self._custom_probes.append(name)
         logger.debug(f"register probe `{name}`")
 
-    def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
-        if name not in self._custom_category_params:
-            self._argparser.add_argument(f"--{name}",required=False)
-            self._custom_category_params[name] = value
+    
 
-    def reg_int(self, name: str, value: Optional[int] = None):
-        if name not in self._custom_int_params:
-            self._argparser.add_argument(f"--{name}",type=int,required=False)
-            self._custom_int_params[name] = value
-
-    def reg_float(self, name: str, value: Optional[float] = None):
-        if name not in self._custom_float_params:
-            self._argparser.add_argument(f"--{name}",type=float,required=False)
-            self._custom_float_params[name] = value
-
-    def flush_params(self):
-        self._has_sections['params_flush']=True
-        args=self._argparser.parse_args(self._arg_str)
-        logger.debug(f"hyperparameters in argparser: {args}")
-        for k in self._custom_category_params.keys():
-            if getattr(args,k) is not None:
-                self._custom_category_params[k]=getattr(args,k)
-                logger.debug(f"flushed `{k}`")
-        for k in self._custom_float_params.keys():
-            if getattr(args,k) is not None:
-                self._custom_float_params[k]=getattr(args,k)
-                logger.debug(f"flushed `{k}`")
-        for k in self._custom_int_params.keys():
-            if getattr(args,k) is not None:
-                self._custom_int_params[k]=getattr(args,k)
-                logger.debug(f"flushed `{k}`")
-
-
-    def register_fastforward_handler(self, func: Callable[[int], None]):
-        self._fastforward_handlers.append(func)
-        logger.debug(f"register a fastforward handler")
+    
+    
 
     def register_dataset(
         self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
@@ -238,6 +122,7 @@ class TrainHelper:
         self._data_val = val
         self._dataloader_val = valloader
         logger.debug("registered train and val set")
+        self._trainval_phase_enabled = True
 
         if self._ddp_session:
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
@@ -319,231 +204,33 @@ class TrainHelper:
         else:
             logger.debug(f"suggesting dynamic param `{name}`")
             return self.trial.suggest_float(name, low, high, step=step, log=log)
-
-
-    def ready_to_train(self):
-        assert hasattr(self, "_data_train"), "train set not set"
-        assert hasattr(self, "_data_val"), "val set not set"
-        if not self._test_phase_enabled:
-            logger.warning("[DATASET] test set not set. test phase will be skipped.")
-
-        self.file.prepare_checkpoint_dir()
-        # make sure all processes waiting till the dir is done
-        if self._ddp_session:
-            self._ddp_session.barrier()
-
-        # create board dir before training
-        self.tbwriter = SummaryWriter(self._board_dir)
-
-        # to avoid flush checkpoint
-        if not hasattr(self, "_best_val_score"):
-            self._best_val_score = 0.0
-        if not hasattr(self, "_best_test_score"):
-            self._best_test_score = 0.0
-
-        # section flag
-        self._section_flags = {}
-        self.report_info()
-
-        logger.warning("[HELPER] ready to train model")
-
-    def _merge_section_flags(self, x: Dict[str, Any]):
-        self._section_flags |= x
-
-    def report_info(self):
-        dataset_str = f"train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self, '_data_test') else 'not set'})"
-        table = show_params_in_3cols(
-            params={
-                "device": self.dev,
-                "diagnose": self._diagnose_mode,
-                "epoch num": self._epoch_num,
-                "dataset": dataset_str,
-                "board dir": self._board_dir,
-                "checkpoint load/save": f"{self._load_checkpoint_enabled}/{self._save_checkpoint_enabled}",
-                "custom probes": self._custom_probes,
-            }
-        )
-        logger.warning(f"[INFO]\n{table}")
-        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self.trial.params)}")
-
-    def _diagnose(self):
-        logger.warning("========== Diagnose Recipe ==========")
-        if not self._has_sections['params_flush']:
-            logger.error("args not flushed")
-        if not self._has_sections['checkpoint_load']:
-            if self._load_checkpoint_enabled:
-                logger.error("checkpoint loading not found")
-            else:
-                logger.warning("checkpoint loading not found but is disabled")
-        if not self._has_sections['train_phase']:
-            logger.error("train phase not found")
-        if not self._has_sections['val_phase']:
-            logger.error("val phase not found")
-        if not self._has_sections['test_phase']:
-            if self._test_phase_enabled:
-                logger.error("test phase not found")
-            else:
-                logger.warning("test phase not found but is disabled")
-        if not self._has_sections['checkpoint_save']:
-            if self._save_checkpoint_enabled:
-                logger.error("checkpoint saving not found")
-            else:
-                logger.warning("checkpoint saving not found but is disabled")
-        else:
-            if "checked_ckpt_slot" not in self._section_flags:
-                logger.warning("default ckpt slot not checked. ignore this if you understand what happened.")
-            if "checked_best_slot" not in self._section_flags:
-                logger.warning("default best slot not checked. ignore this if you understand what happened.")
-            if "checked_helper_state" not in self._section_flags:
-                logger.error("helper state not checked")
-            if "checked_save_ckpt" not in self._section_flags:
-                logger.error("checkpoint not checked")
-            if "checked_save_best" not in self._section_flags:
-                logger.error("best result not checked")
-
-        # remove checkpoints and boards
-        if os.path.exists(self.file.ckpt_dir):
-            shutil.rmtree(self.file.ckpt_dir)
-        if os.path.exists(self.file.board_dir):
-            shutil.rmtree(self.file.board_dir)
-
-    def range_epoch(self):
-        if self._diagnose_mode:
-            logger.info("diagnose mode is enabled. run 2 epochs.")
-            self._epoch_num = 2
-        for i in range(self._epoch_num):
-            if hasattr(self, "_recoverd_epoch") and i <= self._recoverd_epoch:
-                for item in self._fastforward_handlers:
-                    item(i)
-                logger.info(f"[HELPER] fast pass epoch {self._recoverd_epoch}")
-                continue
-            self.cur_epoch = i
-
-            # begin of epoch. set trigger.
-            self._trigger_checkpoint = (
-                self._save_checkpoint_enabled
-                and self.cur_epoch % self._checkpoint_save_period == 0
-            )
-            self._trigger_best_score = False
-            self._trigger_run_test = False
-
-            if not self._ddp_session:
-                logger.warning(f"=== START EPOCH {self.cur_epoch} ===")
-            else:
-                logger.warning(
-                    f"=== RANK {self._ddp_session.get_rank()} START EPOCH {self.cur_epoch} ==="
-                )
-
-            yield i
-
-            # early stop
-            if self.trial.should_prune():
-                raise optuna.TrialPruned()
-
-    def phase_train(self):
-        self._has_sections['train_phase']=True
-        assert hasattr(self,'cur_epoch'), "the phase should be called in epoch"
-        return PhaseHelper(
-            "train",
-            self._data_train,
-            self._dataloader_train,
-            ddp_session=None,
-            dry_run=self._diagnose_mode,
-            exit_callback=self.end_phase_callback,
-            custom_probes=self._custom_probes.copy(),
-        )
-
-    def phase_val(self):
-        self._has_sections['val_phase']=True
-        assert hasattr(self,'cur_epoch'), "the phase should be called in epoch"
-        return PhaseHelper(
-            "val",
-            self._data_val,
-            self._dataloader_val,
-            ddp_session=None,
-            dry_run=self._diagnose_mode,
-            exit_callback=self.end_phase_callback,
-            custom_probes=self._custom_probes.copy(),
-        )
-
-    def phase_test(self):
-        self._has_sections['test_phase']=True
-
-        assert hasattr(self,'cur_epoch'), "the phase should be called in epoch"
-
-        need_run = self._test_phase_enabled and self._trigger_run_test
-        return PhaseHelper(
-            "test",
-            self._data_test if hasattr(self, "_data_test") else FakeEmptySet(),
-            self._dataloader_test
-            if hasattr(self, "_dataloader_test")
-            else DataLoader(FakeEmptySet()),
-            ddp_session=None,
-            dry_run=self._diagnose_mode,
-            exit_callback=self.end_phase_callback,
-            break_phase=not need_run,
-            custom_probes=self._custom_probes.copy(),
-        )
-
-    def end_phase_callback(self, phase: PhaseHelper):
+    
+    def update_tb(self, epochi:int, phase: PhaseHelper, tbwriter:SummaryWriter):
         assert phase._phase_name in ["train", "val", "test"]
         # TODO: collect probes
 
         # only log probes in main process
         if self._is_main_process():
             # assume training loss is sync by user
-            self.tbwriter.add_scalar(
-                f"loss/{phase._phase_name}", phase.loss_probe.average(), self.cur_epoch
+            tbwriter.add_scalar(
+                f"loss/{phase._phase_name}", phase.loss_probe.average(), epochi
             )
-            self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
+            tbwriter.add_scalar("score/train", phase.score, epochi)
 
             # sync of custom probes is done by users
             # TODO: but this can be done by us if necessary
             for k in self._custom_probes:
                 if phase.custom_probes[k].has_data():
-                    self.tbwriter.add_scalar(
+                    tbwriter.add_scalar(
                         f"{k}/{phase._phase_name}",
                         phase.custom_probes[k].average(),
-                        self.cur_epoch,
+                        epochi,
                     )
                     logger.info(
                         f"[{phase._phase_name} probes] {k}: {phase.custom_probes[k].average()}"
                     )
-        if phase._phase_name in ["train", "val"]:
-            self._last_train_score = phase.score
-            self._last_train_loss = phase.loss_probe.average()
-            if not self._ddp_session:
-                logger.warning(
-                    f"|| end {phase._phase_name} {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
-                )
-            else:
-                logger.warning(
-                    f"|| RANK {self._ddp_session.get_rank()} end {phase._phase_name} {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score} ||"
-                )
-        if phase._phase_name == "val":
-            if phase.score >= self._best_val_score or self._diagnose_mode:
-                self._best_val_score = phase.score
-                self._trigger_run_test = True
-                # if having no test phase, store best result according to val score
-                if self._save_checkpoint_enabled and not self._test_phase_enabled:
-                    self._trigger_best_score = True
 
-            # report intermediate score if having no test phase
-            if not self._test_phase_enabled:
-                self.trial.report(phase.score, self.cur_epoch)
-            logger.warning(
-                f"=== END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_train_loss}/{phase.loss_probe.average()}, score {self._last_train_score}/{phase.score} ==="
-            )
-
-        if phase._phase_name == "test":
-            if phase.score >= self._best_test_score or self._diagnose_mode:
-                self._best_test_score = phase.score
-                if self._save_checkpoint_enabled:
-                    self._trigger_best_score = True
-
-            # report intermediate score
-            self.trial.report(phase.score, self.cur_epoch)
-
+# all block sync should be done in bootstrap. all data sync should be done in helper.
 
 class TrainBootstrap:
     def __init__(
@@ -571,6 +258,7 @@ class TrainBootstrap:
         argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
         args,self._extra_arg_str=argparser.parse_known_args()
+        self._argparser=argparse.ArgumentParser()
         
 
         self._disk_root = args.disk_root
@@ -579,12 +267,14 @@ class TrainBootstrap:
             self._comment = args.comment
         else:
             self._comment = datetime.now().strftime("%Y%m%d%H%M%S")
-        self._load_checkpoint = args.load_checkpoint
-        self._save_checkpoint = args.save_checkpoint
+        self._load_checkpoint:bool = args.load_checkpoint
+        self._save_checkpoint:bool = args.save_checkpoint
         self._checkpoint_save_period = checkpoint_save_period
         self._dev = args.dev
         self._diagnose_mode = args.diagnose
         self._enable_ddp = False
+
+        self._custom_params:Dict[str,Any]={}
 
         self._init_logger(args.verbose)
         check_gitignore([self._disk_root])
@@ -599,14 +289,42 @@ class TrainBootstrap:
                 logger.info("created snapshot")
             else:
                 logger.info("snapshot is disabled in diagnose mode")
+    
+    def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
+        if name not in self._custom_params:
+            self._argparser.add_argument(f"--{name}",required=False)
+            self._custom_params[name] = value
+
+    def reg_int(self, name: str, value: Optional[int] = None):
+        if name not in self._custom_params:
+            self._argparser.add_argument(f"--{name}",type=int,required=False)
+            self._custom_params[name] = value
+
+    def reg_float(self, name: str, value: Optional[float] = None):
+        if name not in self._custom_params:
+            self._argparser.add_argument(f"--{name}",type=float,required=False)
+            self._custom_params[name] = value
+    
+    def _flush_params(self):
+        args=self._argparser.parse_args(self._arg_str)
+        logger.debug(f"hyperparameters in argparser: {args}")
+        for k in self._custom_category_params.keys():
+            if getattr(args,k) is not None:
+                self._custom_category_params[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
+        for k in self._custom_float_params.keys():
+            if getattr(args,k) is not None:
+                self._custom_float_params[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
+        for k in self._custom_int_params.keys():
+            if getattr(args,k) is not None:
+                self._custom_int_params[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
         
 
     def _init_ddp(self):
         self._ddp_session = DdpSession()
         logger.info("initialized ddp")
-
-    def _is_main_process(self):
-        return self._ddp_session is None or self._ddp_session.is_main_process()
 
     def _init_logger(self,verbose:bool):
         stdout_level="INFO"
@@ -630,6 +348,33 @@ class TrainBootstrap:
             logger.add(sys.stderr, level=stdout_level, format=LOGGER_FORMAT)
             logger.add(f"logs/log_{self._comment}.log",level=file_level, format=LOGGER_FORMAT)
         logger.info("initialized logger")
+    
+    def _ready_to_train(self,helper:TrainHelper,board_dir:Optional[str]):
+        assert helper._trainval_phase_enabled, "train or val set not set"
+        if not helper._test_phase_enabled:
+            logger.warning("test set not set. test phase will be skipped.")
+
+        helper.file.prepare_checkpoint_dir()
+        # create board dir before training
+        self.tbwriter = SummaryWriter(board_dir)
+        self._report_info(helper=helper,board_dir=self.tbwriter.log_dir)
+        logger.warning("ready to train model")
+
+    def _report_info(self,helper:TrainHelper,board_dir:str):
+        dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
+        table = show_params_in_3cols(
+            params={
+                "device": helper.dev,
+                "diagnose": self._diagnose_mode,
+                "epoch num": self._epoch_num,
+                "dataset": dataset_str,
+                "board dir": board_dir,
+                "checkpoint load/save": f"{self._load_checkpoint}/{self._save_checkpoint}",
+                "custom probes": helper._custom_probes,
+            }
+        )
+        logger.warning(f"[INFO]\n{table}")
+        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(helper.trial.params)}")
 
     def optimize(
         self, recipe:ModuleRecipe, n_trials: int, phase:Optional[int]=None,
@@ -655,7 +400,13 @@ class TrainBootstrap:
         study.optimize(lambda x: self._wrapper(x,recipe,phase_comment), n_trials=n_trials, gc_after_trial=True)
 
         if self._diagnose_mode:
-            self.helper._diagnose()
+            # remove checkpoints and boards
+            if os.path.exists(self.helper.file.ckpt_dir):
+                shutil.rmtree(self.helper.file.ckpt_dir)
+            if os.path.exists(self.helper.file.board_dir):
+                shutil.rmtree(self.helper.file.board_dir)
+            logger.info("removed ckpt and board")
+            logger.warning("========== Diagnose End ==========")
         else:
             best_params = study.best_params
             best_value = study.best_value
@@ -677,17 +428,122 @@ class TrainBootstrap:
             trial,
             arg_str=self._extra_arg_str,
             disk_root=self._disk_root,
-            epoch_num=self._epoch_num,
-            load_checkpoint=self._load_checkpoint,
-            save_checkpoint=self._save_checkpoint,
-            checkpoint_save_period=self._checkpoint_save_period,
             comment=f"{comment}_trial{trial._trial_id}",
             dev=self._dev,
             enable_ddp=self._enable_ddp,
             enable_diagnose=self._diagnose_mode
         )
-        recipe._set_global_deps(self.helper)
-        return recipe.fit()
+        recipe.prepare(self.helper)
+
+        best_score=0 # TODO: a better init is needed
+        # check diagnose mode
+        if self._diagnose_mode:
+            logger.info("diagnose mode is enabled. run 2 epochs.")
+            self._epoch_num = 2
+        
+        recoverd_epoch=None
+        recovered_board_dir=None
+        if self._load_checkpoint:
+            latest_ckpt_path=self.helper.file.find_latest_checkpoint()
+            if latest_ckpt_path is not None:
+                logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
+            else:
+                logger.info(f"no checkpoint found")
+
+            if self._load_checkpoint and latest_ckpt_path is not None:
+                state=recipe.restore_ckpt(latest_ckpt_path)
+                recoverd_epoch=state['cur_epochi']
+                best_score=state['best_score']
+                recovered_board_dir=state['board_dir']
+        
+        self._ready_to_train(helper=self.helper,board_dir=recovered_board_dir)
+        for epochi in range(self._epoch_num):
+            if not self._ddp_session:
+                logger.warning(f"=== START EPOCH {epochi} ===")
+            else:
+                logger.warning(
+                    f"=== RANK {self._ddp_session.get_rank()} START EPOCH {epochi} ==="
+                )
+            
+            recipe.before_epoch()
+            if recoverd_epoch is not None and epochi <= recoverd_epoch:
+                logger.info(f"[HELPER] fast pass epoch {recoverd_epoch}")
+                continue
+            
+            phase=PhaseHelper(
+                "train",
+                self.helper._data_train,
+                self.helper._dataloader_train,
+                ddp_session=None,
+                dry_run=self._diagnose_mode,
+                custom_probes=self.helper._custom_probes.copy(),
+            )
+            recipe.run_train_phase(phase)
+            self._end_phase(epochi,phase)
+            phase=PhaseHelper(
+                "val",
+                self.helper._data_val,
+                self.helper._dataloader_val,
+                ddp_session=None,
+                dry_run=self._diagnose_mode,
+                custom_probes=self.helper._custom_probes.copy(),
+            )
+            recipe.run_val_phase(phase)
+            score=phase.score
+            self._end_phase(epochi,phase)
+            if self.helper._test_phase_enabled:
+                phase=PhaseHelper(
+                    "val",
+                    self.helper._data_val,
+                    self.helper._dataloader_val,
+                    ddp_session=None,
+                    dry_run=self._diagnose_mode,
+                    custom_probes=self.helper._custom_probes.copy(),
+                )
+                recipe.run_train_phase(phase)
+                score=phase.score
+                self._end_phase(epochi,phase)
+            recipe.after_epoch()
+            assert type(score)==float
+
+            # check if ckpt is need
+            need_save_period = epochi % self._checkpoint_save_period == 0
+            if score >= best_score:
+                best_score=score
+                need_save_best=True
+            else:
+                need_save_best=False
+            if self.helper._is_main_process() and self._save_checkpoint:
+                # force saving ckpt in diagnose mode
+                if self._diagnose_mode:
+                    need_save_best=True
+                    need_save_period=True
+                state={
+                    'cur_epochi':epochi,
+                    'best_score':best_score,
+                    'board_dir':self.tbwriter.log_dir,
+                }
+                if need_save_period:recipe.save_ckpt(self.helper.file.get_checkpoint_slot(epochi),extra_state=state)
+                if need_save_best:recipe.save_ckpt(self.helper.file.get_best_checkpoint_slot(),extra_state=state)
+            if self._ddp_session:
+                self._ddp_session.barrier()
+            
+            trial.report(score,epochi)
+            # early stop
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+        return best_score    
+    
+    def _end_phase(self,epochi:int,phase:PhaseHelper):
+        if not self._ddp_session:
+            logger.warning(
+                f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+            )
+        else:
+            logger.warning(
+                f"|| RANK {self._ddp_session.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+            )
 
 
 def gettype(name):
