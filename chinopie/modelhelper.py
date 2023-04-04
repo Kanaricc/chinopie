@@ -39,15 +39,13 @@ class TrainHelper:
         disk_root: str,
         comment: str,
         dev: str,
-        enable_ddp:bool,
-        enable_diagnose:bool,
+        ddp_session:Optional[DdpSession],
+        global_params:Dict[str,Any],
     ) -> None:
         self.trial = trial
         self._arg_str=arg_str
         self._comment = comment
-        # FIXME: should be init in bootstrap
-        self._ddp_session = DdpSession() if enable_ddp else None
-        self._diagnose_mode=enable_diagnose
+        self._ddp_session = ddp_session
         self._argparser=argparse.ArgumentParser()
         self._test_phase_enabled = False
 
@@ -96,11 +94,7 @@ class TrainHelper:
                 logger.info(f"use custom device `{dev}`")
 
         self._custom_probes = []
-        self._custom_category_params: Dict[str, Optional[CategoricalChoiceType]] = {}
-        self._custom_int_params: Dict[str, Optional[int]] = {}
-        self._custom_float_params: Dict[str, Optional[float]] = {}
-        self._fastforward_handlers: List[Callable[[], None]] = []
-
+        self._global_params=global_params
 
     def _is_main_process(self):
         return self._ddp_session is None or self._ddp_session.is_main_process()
@@ -109,10 +103,6 @@ class TrainHelper:
         self._custom_probes.append(name)
         logger.debug(f"register probe `{name}`")
 
-    
-
-    
-    
 
     def register_dataset(
         self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
@@ -166,8 +156,8 @@ class TrainHelper:
     def suggest_category(
         self, name: str, choices: Sequence[CategoricalChoiceType]
     ) -> CategoricalChoiceType:
-        assert name in self._custom_category_params, f"request for unregisted param `{name}`"
-        fixed_val = self._custom_category_params[name]
+        assert name in self._global_params, f"request for unregisted param `{name}`"
+        fixed_val = self._global_params[name]
         if fixed_val is not None:
             assert fixed_val in choices
             logger.debug(f"using fixed param `{name}`")
@@ -177,8 +167,8 @@ class TrainHelper:
             return self.trial.suggest_categorical(name, choices)
 
     def suggest_int(self, name: str, low: int, high: int, step=1, log=False) -> int:
-        assert name in self._custom_int_params, f"request for unregisted param `{name}`"
-        fixed_val = self._custom_int_params[name]
+        assert name in self._global_params, f"request for unregisted param `{name}`"
+        fixed_val = self._global_params[name]
         if fixed_val is not None:
             assert fixed_val >= low and fixed_val <= high
             logger.debug(f"using fixed param `{name}`")
@@ -195,8 +185,8 @@ class TrainHelper:
         step: Optional[float] = None,
         log=False,
     ) -> float:
-        assert name in self._custom_float_params, f"request for unregisted param `{name}`"
-        fixed_val = self._custom_float_params[name]
+        assert name in self._global_params, f"request for unregisted param `{name}`"
+        fixed_val = self._global_params[name]
         if fixed_val is not None:
             assert fixed_val >= low and fixed_val <= high
             logger.debug(f"using fixed param `{name}`")
@@ -242,6 +232,7 @@ class TrainBootstrap:
         comment: Optional[str],
         checkpoint_save_period: int = 1,
         enable_snapshot=False,
+        enable_prune=False,
         dev="",
         diagnose=False,
         verbose=False,
@@ -273,6 +264,7 @@ class TrainBootstrap:
         self._dev = args.dev
         self._diagnose_mode = args.diagnose
         self._enable_ddp = False
+        self._enable_prune=enable_prune
 
         self._custom_params:Dict[str,Any]={}
 
@@ -306,19 +298,11 @@ class TrainBootstrap:
             self._custom_params[name] = value
     
     def _flush_params(self):
-        args=self._argparser.parse_args(self._arg_str)
+        args=self._argparser.parse_args(self._extra_arg_str)
         logger.debug(f"hyperparameters in argparser: {args}")
-        for k in self._custom_category_params.keys():
+        for k in self._custom_params.keys():
             if getattr(args,k) is not None:
-                self._custom_category_params[k]=getattr(args,k)
-                logger.debug(f"flushed `{k}`")
-        for k in self._custom_float_params.keys():
-            if getattr(args,k) is not None:
-                self._custom_float_params[k]=getattr(args,k)
-                logger.debug(f"flushed `{k}`")
-        for k in self._custom_int_params.keys():
-            if getattr(args,k) is not None:
-                self._custom_int_params[k]=getattr(args,k)
+                self._custom_params[k]=getattr(args,k)
                 logger.debug(f"flushed `{k}`")
         
 
@@ -335,7 +319,7 @@ class TrainBootstrap:
         # logger file
         if not os.path.exists("logs"):
             os.mkdir("logs")
-        if self._enable_ddp:
+        if self._ddp_session:
             logger.remove()
             logger.add(sys.stderr, level=stdout_level, format=LOGGER_FORMAT)
             logger.add(
@@ -350,6 +334,8 @@ class TrainBootstrap:
         logger.info("initialized logger")
     
     def _ready_to_train(self,helper:TrainHelper,board_dir:Optional[str]):
+        self._flush_params()
+
         assert helper._trainval_phase_enabled, "train or val set not set"
         if not helper._test_phase_enabled:
             logger.warning("test set not set. test phase will be skipped.")
@@ -430,8 +416,8 @@ class TrainBootstrap:
             disk_root=self._disk_root,
             comment=f"{comment}_trial{trial._trial_id}",
             dev=self._dev,
-            enable_ddp=self._enable_ddp,
-            enable_diagnose=self._diagnose_mode
+            ddp_session=self._ddp_session,
+            global_params=self._custom_params,
         )
         recipe.prepare(self.helper)
 
@@ -441,7 +427,7 @@ class TrainBootstrap:
             logger.info("diagnose mode is enabled. run 2 epochs.")
             self._epoch_num = 2
         
-        recoverd_epoch=None
+        recovered_epoch=None
         recovered_board_dir=None
         if self._load_checkpoint:
             latest_ckpt_path=self.helper.file.find_latest_checkpoint()
@@ -452,7 +438,7 @@ class TrainBootstrap:
 
             if self._load_checkpoint and latest_ckpt_path is not None:
                 state=recipe.restore_ckpt(latest_ckpt_path)
-                recoverd_epoch=state['cur_epochi']
+                recovered_epoch=state['cur_epochi']
                 best_score=state['best_score']
                 recovered_board_dir=state['board_dir']
         
@@ -466,8 +452,8 @@ class TrainBootstrap:
                 )
             
             recipe.before_epoch()
-            if recoverd_epoch is not None and epochi <= recoverd_epoch:
-                logger.info(f"[HELPER] fast pass epoch {recoverd_epoch}")
+            if recovered_epoch is not None and epochi <= recovered_epoch:
+                logger.info(f"[HELPER] fast pass epoch {recovered_epoch}")
                 continue
             
             phase=PhaseHelper(
@@ -530,7 +516,7 @@ class TrainBootstrap:
             
             trial.report(score,epochi)
             # early stop
-            if trial.should_prune():
+            if self._enable_prune and trial.should_prune():
                 raise optuna.TrialPruned()
 
         return best_score    
