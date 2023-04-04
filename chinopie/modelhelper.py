@@ -25,7 +25,6 @@ from .filehelper import FileHelper
 from .phasehelper import (
     PhaseHelper,
 )
-from .recipe import ModuleRecipe
 from .utils import show_params_in_3cols,create_snapshot,check_gitignore
 
 # LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
@@ -231,6 +230,9 @@ class TrainHelper:
 
 # all block sync should be done in bootstrap. all data sync should be done in helper.
 
+from .recipe import ModuleRecipe
+
+
 class TrainBootstrap:
     def __init__(
         self,
@@ -279,10 +281,14 @@ class TrainBootstrap:
 
         self._custom_params:Dict[str,Any]={}
 
-        self._init_logger(args.verbose)
-        check_gitignore([self._disk_root])
         if self._enable_ddp:
             self._init_ddp()
+        else:
+            self._ddp_session=None
+        self._init_logger(args.verbose)
+        check_gitignore([self._disk_root])
+        
+
         if diagnose:
             torch.autograd.anomaly_mode.set_detect_anomaly(True)
             logger.info("diagnose mode enabled")
@@ -345,8 +351,6 @@ class TrainBootstrap:
         logger.info("initialized logger")
     
     def _ready_to_train(self,helper:TrainHelper,board_dir:Optional[str]):
-        self._flush_params()
-
         assert helper._trainval_phase_enabled, "train or val set not set"
         if not helper._test_phase_enabled:
             logger.warning("test set not set. test phase will be skipped.")
@@ -377,6 +381,8 @@ class TrainBootstrap:
     def optimize(
         self, recipe:ModuleRecipe, n_trials: int, stage:Optional[int]=None,inf_score:float=0,
     ):
+        self._flush_params()
+                
         if stage is None:
             stage_comment=self._comment
         else:
@@ -434,7 +440,6 @@ class TrainBootstrap:
             global_params=self._custom_params,
         )
         recipe.prepare(self.helper)
-        recipe.set_optimizing_params(self.helper._model,self.helper._optimizer)
 
         best_score=self._inf_score
         # check diagnose mode

@@ -1,25 +1,30 @@
-from typing import Sequence,Any,Dict
-from abc import ABC
+from typing import Sequence,Any,Dict,TypeVar,Generic
+from abc import ABC,abstractmethod
 import torch
 from torch import nn,Tensor
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-from chinopie.modelhelper import TrainHelper
-from chinopie.phasehelper import PhaseHelper
+from chinopie.modelhelper import TrainHelper,PhaseHelper
 
-class ModuleRecipe:
+
+M=TypeVar('M')
+O=TypeVar('O')
+
+class ModuleRecipe(ABC,Generic[M,O]):
     def __init__(self):
         pass
 
+    def reg_params(self,helper:TrainHelper):
+        pass
+
+    
     def prepare(self,helper:TrainHelper):
-        ...
+        pass
     
     # TODO: this should be removed
     def _set_helper(self,helper:TrainHelper):
         self._helper=helper
-
-    def set_optimizing_params(self,model,opti):
-        raise NotImplemented
+    
     
     @property
     def model(self):
@@ -76,9 +81,11 @@ class ModuleRecipe:
             self.update_probe(data,output.detach().cpu(),p)
         self.after_iter(data,output,'test')
     
+    @abstractmethod
     def forward(self,data)->Tensor:
         raise NotImplemented
     
+    @abstractmethod
     def cal_loss(self,data,output:Tensor)->Tensor:
         raise NotImplemented
     
@@ -94,6 +101,7 @@ class ModuleRecipe:
         """
         ...
     
+    @abstractmethod
     def report_score(self,phase:str)->float:
         """
         report the score of the phase
