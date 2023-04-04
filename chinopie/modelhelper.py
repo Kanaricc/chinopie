@@ -265,6 +265,8 @@ class TrainBootstrap:
         self._diagnose_mode = args.diagnose
         self._enable_ddp = False
         self._enable_prune=enable_prune
+        if self._enable_prune:
+            logger.info('early stop is enabled')
 
         self._custom_params:Dict[str,Any]={}
 
@@ -350,9 +352,10 @@ class TrainBootstrap:
         dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
         table = show_params_in_3cols(
             params={
-                "device": helper.dev,
+                "proper device": self._dev,
                 "diagnose": self._diagnose_mode,
                 "epoch num": self._epoch_num,
+                "early stop": self._enable_prune,
                 "dataset": dataset_str,
                 "board dir": board_dir,
                 "checkpoint load/save": f"{self._load_checkpoint}/{self._save_checkpoint}",
@@ -363,27 +366,29 @@ class TrainBootstrap:
         logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(helper.trial.params)}")
 
     def optimize(
-        self, recipe:ModuleRecipe, n_trials: int, phase:Optional[int]=None,
+        self, recipe:ModuleRecipe, n_trials: int, stage:Optional[int]=None,inf_score:float=0,
     ):
-        if phase is None:
-            phase_comment=self._comment
+        if stage is None:
+            stage_comment=self._comment
         else:
-            phase_comment=f"{self._comment}({phase})"
+            stage_comment=f"{self._comment}({stage})"
         
         if not os.path.exists("opts"):
             os.mkdir("opts")
-        storage_path = os.path.join("opts", f"{phase_comment}.db")
+        storage_path = os.path.join("opts", f"{stage_comment}.db")
         # do not save storage in diagnose mode
         if self._diagnose_mode:
             storage_path=None
         else:
             storage_path=f"sqlite:///{storage_path}"
+        
+        self._inf_score=inf_score
         study = optuna.create_study(storage=storage_path)
         
         # in diagnose mode, run 3 times only
         if self._diagnose_mode:
             n_trials=3
-        study.optimize(lambda x: self._wrapper(x,recipe,phase_comment), n_trials=n_trials, gc_after_trial=True)
+        study.optimize(lambda x: self._wrapper(x,recipe,stage_comment), n_trials=n_trials, gc_after_trial=True)
 
         if self._diagnose_mode:
             # remove checkpoints and boards
@@ -403,7 +408,7 @@ class TrainBootstrap:
             )
             logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
-            target_helper=FileHelper(self._disk_root,f"{phase_comment}")
+            target_helper=FileHelper(self._disk_root,f"{stage_comment}")
             shutil.copytree(self.helper._board_dir,target_helper.board_dir)
             shutil.copytree(self.helper.file.ckpt_dir,target_helper.ckpt_dir)
             logger.info("copied best trial as the final result")
@@ -421,7 +426,7 @@ class TrainBootstrap:
         )
         recipe.prepare(self.helper)
 
-        best_score=0 # TODO: a better init is needed
+        best_score=self._inf_score
         # check diagnose mode
         if self._diagnose_mode:
             logger.info("diagnose mode is enabled. run 2 epochs.")
