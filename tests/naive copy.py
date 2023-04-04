@@ -25,6 +25,15 @@ class Recipe1(ModuleRecipe[Model,torch.optim.AdamW]):
     
     
     def prepare(self, helper: TrainHelper):
+        trainset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
+        valset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
+        testset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
+        trainloader=DataLoader(trainset,helper.suggest_int('batch_size',1,10))
+        valloader=DataLoader(valset,helper.suggest_int('batch_size',1,10))
+        testloader=DataLoader(testset,helper.suggest_int('batch_size',1,10))
+        helper.register_dataset(trainset,trainloader,valset,valloader)
+        helper.register_test_dataset(testset,testloader)
+
         model=Model()
         opti=torch.optim.AdamW(model.parameters(),lr=helper.suggest_float('lr',1e-6,1e-1,log=True))
         helper.reg_model(model)
@@ -37,11 +46,12 @@ class Recipe1(ModuleRecipe[Model,torch.optim.AdamW]):
         return F.l1_loss(output,data['target'])
     
     def report_score(self, phase: str) -> float:
-        return 0
+        return 0.0
     
 
 
 if __name__=="__main__":
     tb=TrainBootstrap(disk_root='deps',epoch_num=10,load_checkpoint=True,save_checkpoint=True,comment=None)
     tb.reg_float('lr')
+    tb.reg_int('batch_size')
     tb.optimize(Recipe1(),1)

@@ -55,7 +55,6 @@ class TrainHelper:
             self._ddp_session.barrier()
 
         self.file = FileHelper(disk_root, comment, self._ddp_session)
-        self._board_dir = self.file.get_default_board_dir()
 
         if self._ddp_session:
             logger.info(
@@ -97,6 +96,13 @@ class TrainHelper:
 
         self._custom_probes = []
         self._global_params=global_params
+        self._flags={}
+    
+    def _set_flag(self,key:str,val:Any=True):
+        self._flags[key]=val
+    
+    def _get_flag(self,key:str):
+        return self._flags[key] if key in self._flags else None
 
     def _is_main_process(self):
         return self._ddp_session is None or self._ddp_session.is_main_process()
@@ -114,7 +120,7 @@ class TrainHelper:
         self._data_val = val
         self._dataloader_val = valloader
         logger.debug("registered train and val set")
-        self._trainval_phase_enabled = True
+        self._set_flag('trainval_data_set')
 
         if self._ddp_session:
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
@@ -124,8 +130,8 @@ class TrainHelper:
     def register_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
         self._dataloader_test = testloader
-        self._test_phase_enabled = True
         logger.debug("registered test set. enabled test phase.")
+        self._set_flag('test_data_set')
 
         if self._ddp_session:
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
@@ -351,12 +357,14 @@ class TrainBootstrap:
         logger.info("initialized logger")
     
     def _ready_to_train(self,helper:TrainHelper,board_dir:Optional[str]):
-        assert helper._trainval_phase_enabled, "train or val set not set"
-        if not helper._test_phase_enabled:
+        assert helper._get_flag('trainval_data_set'), "train or val set not set"
+        if not helper._get_flag('test_data_set'):
             logger.warning("test set not set. test phase will be skipped.")
 
         helper.file.prepare_checkpoint_dir()
         # create board dir before training
+        if board_dir is None:
+            board_dir=helper.file.default_board_dir
         self.tbwriter = SummaryWriter(board_dir)
         self._report_info(helper=helper,board_dir=self.tbwriter.log_dir)
         logger.warning("ready to train model")
@@ -409,8 +417,8 @@ class TrainBootstrap:
             # remove checkpoints and boards
             if os.path.exists(self.helper.file.ckpt_dir):
                 shutil.rmtree(self.helper.file.ckpt_dir)
-            if os.path.exists(self.helper.file.board_dir):
-                shutil.rmtree(self.helper.file.board_dir)
+            if os.path.exists(self.helper.file.default_board_dir):
+                shutil.rmtree(self.helper.file.default_board_dir)
             logger.info("removed ckpt and board")
             logger.warning("========== Diagnose End ==========")
         else:
@@ -424,7 +432,7 @@ class TrainBootstrap:
             logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
             target_helper=FileHelper(self._disk_root,f"{stage_comment}")
-            shutil.copytree(self.helper._board_dir,target_helper.board_dir)
+            shutil.copytree(self.tbwriter.log_dir,target_helper.default_board_dir)
             shutil.copytree(self.helper.file.ckpt_dir,target_helper.ckpt_dir)
             logger.info("copied best trial as the final result")
         logger.warning("[BOOTSTRAP] good luck!")
@@ -439,6 +447,7 @@ class TrainBootstrap:
             ddp_session=self._ddp_session,
             global_params=self._custom_params,
         )
+        recipe._set_helper(self.helper)
         recipe.prepare(self.helper)
 
         best_score=self._inf_score
@@ -485,7 +494,9 @@ class TrainBootstrap:
                 custom_probes=self.helper._custom_probes.copy(),
             )
             recipe.run_train_phase(phase)
+            phase._check_update()
             self._end_phase(epochi,phase)
+
             phase=PhaseHelper(
                 "val",
                 self.helper._data_val,
@@ -495,8 +506,10 @@ class TrainBootstrap:
                 custom_probes=self.helper._custom_probes.copy(),
             )
             recipe.run_val_phase(phase)
+            phase._check_update()
             score=phase.score
             self._end_phase(epochi,phase)
+
             if self.helper._test_phase_enabled:
                 phase=PhaseHelper(
                     "val",
@@ -507,6 +520,7 @@ class TrainBootstrap:
                     custom_probes=self.helper._custom_probes.copy(),
                 )
                 recipe.run_train_phase(phase)
+                phase._check_update()
                 score=phase.score
                 self._end_phase(epochi,phase)
             recipe.after_epoch()

@@ -61,6 +61,16 @@ class PhaseHelper:
         self._custom_probe_name = custom_probes
         self._break_phase = break_phase
 
+        self._score = 0.0
+        self._loss_probe = AverageMeter("")
+        self._realtime_loss_probe=SmoothMeanMeter()
+        self._custom_probes = dict(
+            [(x, AverageMeter(x)) for x in self._custom_probe_name]
+        )
+
+        self._loss_updated = False
+        self._score_updated = False
+
     def get_data_sample(self):
         for data in self._dataloader:
             return data
@@ -83,21 +93,8 @@ class PhaseHelper:
                 yield batchi, data
                 if self._dry_run and batchi>=2:
                     break
-
-    def __enter__(self):
-        self._score = 0.0
-        self._loss_probe = AverageMeter("")
-        self._realtime_loss_probe=SmoothMeanMeter()
-        self._custom_probes = dict(
-            [(x, AverageMeter(x)) for x in self._custom_probe_name]
-        )
-
-        self._loss_updated = False
-        self._score_updated = False
-
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
+    
+    def _check_update(self):
         if not self._score_updated:
             logger.error(f"no score updated during phase {self._phase_name}")
         if not self._loss_updated:

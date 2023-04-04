@@ -41,9 +41,6 @@ class FileHelper:
         #     DIR_TENSORBOARD,
         #     f"{self.comment}-{datetime.now().strftime('%Y.%m.%d.%H.%M.%S')}",
         # )
-        self.board_dir = os.path.join(
-            self.disk_root,DIR_TENSORBOARD,self.comment,
-        )
 
     def prepare_checkpoint_dir(self):
         if not os.path.exists(self.ckpt_dir):
@@ -109,9 +106,12 @@ class FileHelper:
         if not self._is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
         return os.path.join(self.ckpt_dir, "best.pth")
-
-    def get_default_board_dir(self) -> str:
-        return self.board_dir
+    
+    @property
+    def default_board_dir(self) -> str:
+        return os.path.join(
+            self.disk_root,DIR_TENSORBOARD,self.comment,
+        )
 
     def _is_main_process(self):
         return self.ddp_session is None or DdpSession.is_main_process()
