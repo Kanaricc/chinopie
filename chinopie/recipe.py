@@ -7,19 +7,20 @@ from torch.optim import Optimizer
 from chinopie.modelhelper import TrainHelper,PhaseHelper
 
 
-M=TypeVar('M')
-O=TypeVar('O')
 
-class ModuleRecipe(ABC,Generic[M,O]):
+class ModuleRecipe(ABC):
     def __init__(self):
         pass
 
     def reg_params(self,helper:TrainHelper):
         pass
 
-    
     def prepare(self,helper:TrainHelper):
         pass
+
+    @abstractmethod
+    def set_optimizers(self,model,helper:TrainHelper)->Optimizer:
+        ...
     
     # TODO: this should be removed
     def _set_helper(self,helper:TrainHelper):
@@ -54,7 +55,7 @@ class ModuleRecipe(ABC,Generic[M,O]):
         pass
         p.end_phase(self.report_score('test'))
     
-    def run_train_iter(self,data:Any,p:PhaseHelper):
+    def run_train_iter(self,data,p:PhaseHelper):
         output=self.forward(data)
         loss=self.cal_loss(data,output)
 
@@ -62,7 +63,7 @@ class ModuleRecipe(ABC,Generic[M,O]):
         loss.backward()
         self.optimizer.step()
         p.update_loss(loss.detach().cpu())
-        self.update_probe(data,output.detach().cpu(),p)
+        self.update_probe(data,output,p)
         self.after_iter(data,output,'train')
     
     def run_val_iter(self,data,p:PhaseHelper):
@@ -70,7 +71,7 @@ class ModuleRecipe(ABC,Generic[M,O]):
             output=self.forward(data)
             loss=self.cal_loss(data,output)
             p.update_loss(loss.detach().cpu())
-            self.update_probe(data,output.detach().cpu(),p)
+            self.update_probe(data,output,p)
         self.after_iter(data,output,'val')
     
     def run_test_iter(self,data,p:PhaseHelper):
@@ -78,22 +79,22 @@ class ModuleRecipe(ABC,Generic[M,O]):
             output=self.forward(data)
             loss=self.cal_loss(data,output)
             p.update_loss(loss.detach().cpu())
-            self.update_probe(data,output.detach().cpu(),p)
+            self.update_probe(data,output,p)
         self.after_iter(data,output,'test')
     
     @abstractmethod
-    def forward(self,data)->Tensor:
+    def forward(self,data)->Any:
         raise NotImplemented
     
     @abstractmethod
-    def cal_loss(self,data,output:Tensor)->Tensor:
+    def cal_loss(self,data,output)->Tensor:
         raise NotImplemented
     
     def update_probe(self,data,output,p:PhaseHelper):
         """
         managed custom probe are supposed to be updated here
         """
-        ...
+        pass
     
     def after_iter(self,data,output,phase:str):
         """

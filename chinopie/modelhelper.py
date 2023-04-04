@@ -51,9 +51,6 @@ class TrainHelper:
         self._argparser=argparse.ArgumentParser()
         self._test_phase_enabled = False
 
-        if self._ddp_session:
-            self._ddp_session.barrier()
-
         self.file = FileHelper(disk_root, comment, self._ddp_session)
 
         if self._ddp_session:
@@ -139,8 +136,9 @@ class TrainHelper:
     
     def reg_model(self,model:nn.Module):
         self._model=model
+        # TODO: move device
     
-    def reg_optimizer(self,optimizer:Optimizer):
+    def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer
 
     def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
@@ -356,19 +354,6 @@ class TrainBootstrap:
             logger.add(f"logs/log_{self._comment}.log",level=file_level, format=LOGGER_FORMAT)
         logger.info("initialized logger")
     
-    def _ready_to_train(self,helper:TrainHelper,board_dir:Optional[str]):
-        assert helper._get_flag('trainval_data_set'), "train or val set not set"
-        if not helper._get_flag('test_data_set'):
-            logger.warning("test set not set. test phase will be skipped.")
-
-        helper.file.prepare_checkpoint_dir()
-        # create board dir before training
-        if board_dir is None:
-            board_dir=helper.file.default_board_dir
-        self.tbwriter = SummaryWriter(board_dir)
-        self._report_info(helper=helper,board_dir=self.tbwriter.log_dir)
-        logger.warning("ready to train model")
-
     def _report_info(self,helper:TrainHelper,board_dir:str):
         dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
         table = show_params_in_3cols(
@@ -449,6 +434,7 @@ class TrainBootstrap:
         )
         recipe._set_helper(self.helper)
         recipe.prepare(self.helper)
+        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
 
         best_score=self._inf_score
         # check diagnose mode
@@ -471,7 +457,19 @@ class TrainBootstrap:
                 best_score=state['best_score']
                 recovered_board_dir=state['board_dir']
         
-        self._ready_to_train(helper=self.helper,board_dir=recovered_board_dir)
+        assert self.helper._get_flag('trainval_data_set'), "train or val set not set"
+        if not self.helper._get_flag('test_data_set'):
+            logger.warning("test set not set. test phase will be skipped.")
+        
+        # create checkpoint dir
+        self.helper.file.prepare_checkpoint_dir()
+        # create board dir before training
+        board_dir=recovered_board_dir if recovered_board_dir is not None else self.helper.file.default_board_dir
+        self.tbwriter = SummaryWriter(board_dir)
+        self._report_info(helper=self.helper,board_dir=self.tbwriter.log_dir)
+        if self._ddp_session:
+            self._ddp_session.barrier()
+        logger.warning("ready to train model")
         for epochi in range(self._epoch_num):
             if not self._ddp_session:
                 logger.warning(f"=== START EPOCH {epochi} ===")
@@ -492,6 +490,7 @@ class TrainBootstrap:
                 ddp_session=None,
                 dry_run=self._diagnose_mode,
                 custom_probes=self.helper._custom_probes.copy(),
+                dev=self.helper.dev
             )
             recipe.run_train_phase(phase)
             phase._check_update()
@@ -504,6 +503,7 @@ class TrainBootstrap:
                 ddp_session=None,
                 dry_run=self._diagnose_mode,
                 custom_probes=self.helper._custom_probes.copy(),
+                dev=self.helper.dev
             )
             recipe.run_val_phase(phase)
             phase._check_update()
@@ -518,6 +518,7 @@ class TrainBootstrap:
                     ddp_session=None,
                     dry_run=self._diagnose_mode,
                     custom_probes=self.helper._custom_probes.copy(),
+                    dev=self.helper.dev
                 )
                 recipe.run_train_phase(phase)
                 phase._check_update()

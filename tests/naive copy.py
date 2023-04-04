@@ -1,10 +1,12 @@
 import sys
+from typing import Dict
 sys.path.append('..')
 import torch
 from torch import Tensor
 from torch.nn import functional as F
 from torch import nn
 from torch.utils.data import DataLoader
+from torch.optim import Optimizer
 from chinopie import TrainHelper,ModuleRecipe
 from chinopie.modelhelper import TrainBootstrap
 from chinopie.datasets.fakeset import FakeRandomSet
@@ -19,7 +21,7 @@ class Model(nn.Module):
         return self.fc1(x)
 
 
-class Recipe1(ModuleRecipe[Model,torch.optim.AdamW]):
+class Recipe1(ModuleRecipe):
     def __init__(self):
         super().__init__()
     
@@ -35,14 +37,15 @@ class Recipe1(ModuleRecipe[Model,torch.optim.AdamW]):
         helper.register_test_dataset(testset,testloader)
 
         model=Model()
-        opti=torch.optim.AdamW(model.parameters(),lr=helper.suggest_float('lr',1e-6,1e-1,log=True))
         helper.reg_model(model)
-        helper.reg_optimizer(opti)
+
+    def set_optimizers(self, model:Model, helper: TrainHelper) -> Optimizer:
+        return torch.optim.AdamW(model.parameters(),lr=helper.suggest_float('lr',1e-5,1e-1,log=True))
     
     def forward(self, data) -> Tensor:
         return self.model(data['input'])
     
-    def cal_loss(self, data, output: Tensor) -> Tensor:
+    def cal_loss(self, data, output) -> Tensor:
         return F.l1_loss(output,data['target'])
     
     def report_score(self, phase: str) -> float:

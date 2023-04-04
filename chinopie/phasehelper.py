@@ -1,6 +1,6 @@
 import sys
 import inspect
-from typing import List,Dict,Any,Optional,Callable
+from typing import List,Dict,Any,Optional,Callable,Sequence
 from typing_extensions import Self
 
 from torch.utils.data import DataLoader
@@ -47,19 +47,19 @@ class PhaseHelper:
             phase_name: str,
             dataset: Any,
             dataloader: DataLoader,
+            dev:Any,
             ddp_session: Optional[DdpSession] = None,
             dry_run: bool = False,
             custom_probes: List[str] = [],
-            break_phase: bool = False,
     ) -> None:
         self._phase_name = phase_name
         self._dry_run = dry_run
         self._ddp_session = ddp_session
         self._dataset = dataset
         self._dataloader = dataloader
+        self._dev=dev
 
         self._custom_probe_name = custom_probes
-        self._break_phase = break_phase
 
         self._score = 0.0
         self._loss_probe = AverageMeter("")
@@ -83,6 +83,7 @@ class PhaseHelper:
                     if self._dry_run:
                         logger.info("data preview")
                         logger.info(data)
+                    # TODO: memory copy
                     yield batchi, data
                     progressbar.update()
                     progressbar.set_postfix({'loss':self._realtime_loss_probe})
