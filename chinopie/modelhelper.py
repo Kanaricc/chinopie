@@ -12,6 +12,7 @@ from torch.functional import Tensor
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
+from torch.optim import Optimizer
 import optuna
 from optuna.distributions import CategoricalChoiceType
 import numpy as np
@@ -30,6 +31,8 @@ from .utils import show_params_in_3cols,create_snapshot,check_gitignore
 # LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
 
+
+# TrainHelper has no state
 
 class TrainHelper:
     def __init__(
@@ -128,6 +131,12 @@ class TrainHelper:
         if self._ddp_session:
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
             logger.debug("ddp enabled, checked distributed sampler in test set")
+    
+    def reg_model(self,model:nn.Module):
+        self._model=model
+    
+    def reg_optimizer(self,optimizer:Optimizer):
+        self._optimizer=optimizer
 
     def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
         if not self._ddp_session or disable_ddp_seed:
@@ -425,6 +434,7 @@ class TrainBootstrap:
             global_params=self._custom_params,
         )
         recipe.prepare(self.helper)
+        recipe.set_optimizing_params(self.helper._model,self.helper._optimizer)
 
         best_score=self._inf_score
         # check diagnose mode

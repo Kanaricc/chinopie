@@ -8,22 +8,26 @@ from chinopie.modelhelper import TrainHelper
 from chinopie.phasehelper import PhaseHelper
 
 class ModuleRecipe:
-    def __init__(self) -> None:
+    def __init__(self):
         pass
 
     def prepare(self,helper:TrainHelper):
         ...
     
+    # TODO: this should be removed
+    def _set_helper(self,helper:TrainHelper):
+        self._helper=helper
+
     def set_optimizing_params(self,model,opti):
         raise NotImplemented
     
     @property
     def model(self):
-        return self._model
+        return self._helper._model
     
     @property
     def optimizer(self):
-        return self._optimizer
+        return self._helper._optimizer
     
     def run_train_phase(self,p:PhaseHelper):
         self.model.train()
@@ -49,7 +53,6 @@ class ModuleRecipe:
         output=self.forward(data)
         loss=self.cal_loss(data,output)
 
-        # TODO: optimizer models
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -80,13 +83,22 @@ class ModuleRecipe:
         raise NotImplemented
     
     def update_probe(self,data,output,p:PhaseHelper):
-        raise NotImplemented
+        """
+        managed custom probe are supposed to be updated here
+        """
+        ...
     
     def after_iter(self,data,output,phase:str):
+        """
+        your probes are supposed to be updated here
+        """
         ...
     
     def report_score(self,phase:str)->float:
-        ...
+        """
+        report the score of the phase
+        """
+        raise NotImplemented
 
     def restore_ckpt(self,ckpt:str)->Dict[str,Any]:
         data=torch.load(ckpt,map_location='cpu')
