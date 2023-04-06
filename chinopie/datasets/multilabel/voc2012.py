@@ -14,6 +14,8 @@ from torch import nn
 import torch.nn.functional as F
 from loguru import logger
 
+from . import MultiLabelDataset,MultiLabelSample
+
 
 DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar"
 TEST_DATA_URL = "http://pjreddie.com/media/files/VOC2012test.tar"
@@ -127,7 +129,7 @@ def prepare_voc12(root: str):
         logger.warning("done")
 
 
-class VOC2012Dataset(Dataset):
+class VOC2012Dataset(MultiLabelDataset):
     def __init__(
         self,
         root: str,
@@ -161,7 +163,7 @@ class VOC2012Dataset(Dataset):
     def reg_extra_preprocess(self, preprocess: Any):
         self.extra_preprocess = preprocess
 
-    def __getitem__(self, index):
+    def __getitem__(self, index)->MultiLabelSample:
         item = self.img_list[index]
 
         _, filename, target, nagatives = (
@@ -178,10 +180,11 @@ class VOC2012Dataset(Dataset):
         if self.negatives_as_neg1:
             target[nagatives] = -1
 
-        res = {
+        res:MultiLabelSample = {
             "index": index,
             "name": filename,
             "image": image,
+            "extra_image":None,
             "target": target2,
         }
         if hasattr(self, "extra_preprocess"):

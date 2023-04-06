@@ -11,6 +11,8 @@ import torch.nn.functional as F
 from loguru import logger
 import numpy as np
 
+from . import MultiLabelDataset,MultiLabelSample
+
 URLS = {
     "train_img": "http://images.cocodataset.org/zips/train2014.zip",
     "val_img": "http://images.cocodataset.org/zips/val2014.zip",
@@ -146,7 +148,7 @@ def get_coco_labels(root: str) -> List[str]:
     return keys
 
 
-class COCO2014Dataset(Dataset):
+class COCO2014Dataset(MultiLabelDataset):
     img_list: List[Any]
     one_hot: bool
 
@@ -190,7 +192,7 @@ class COCO2014Dataset(Dataset):
     def __len__(self):
         return len(self.img_list)
 
-    def __getitem__(self, index: int):
+    def __getitem__(self, index: int)->MultiLabelSample:
         item = self.img_list[index]
         filename = item["file_name"]
         labels = sorted(item["labels"])
@@ -206,10 +208,11 @@ class COCO2014Dataset(Dataset):
         if self.negatives_as_neg1:
             target[negative_labels]=-1
 
-        res={
+        res:MultiLabelSample={
             "index": index,
             "name": filename,
             "image": image,
+            "extra_image":None,
             "target": target,
         }
         if hasattr(self,'extra_preprocess'):
