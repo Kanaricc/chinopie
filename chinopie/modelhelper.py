@@ -209,18 +209,19 @@ class TrainHelper:
     
     def update_tb(self, epochi:int, phase: PhaseHelper, tbwriter:SummaryWriter):
         assert phase._phase_name in ["train", "val", "test"]
-        # TODO: collect probes
+        if self._ddp_session:
+            phase.loss_probe._sync_dist_nodes()
+            phase._score._sync_dist_nodes()
+            for k in phase.custom_probes:
+                phase.custom_probes[k]._sync_dist_nodes()
 
         # only log probes in main process
         if self._is_main_process():
-            # assume training loss is sync by user
             tbwriter.add_scalar(
                 f"loss/{phase._phase_name}", phase.loss_probe.average(), epochi
             )
             tbwriter.add_scalar("score/train", phase.score, epochi)
 
-            # sync of custom probes is done by users
-            # TODO: but this can be done by us if necessary
             for k in self._custom_probes:
                 if phase.custom_probes[k].has_data():
                     tbwriter.add_scalar(
@@ -235,8 +236,6 @@ class TrainHelper:
 # all block sync should be done in bootstrap. all data sync should be done in helper.
 
 from .recipe import ModuleRecipe
-
-
 class TrainBootstrap:
     def __init__(
         self,
@@ -480,6 +479,7 @@ class TrainBootstrap:
             
             recipe.before_epoch()
             if recovered_epoch is not None and epochi <= recovered_epoch:
+                recipe.after_epoch()
                 logger.info(f"[HELPER] fast pass epoch {recovered_epoch}")
                 continue
             

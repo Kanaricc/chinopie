@@ -5,13 +5,16 @@ from collections import deque
 
 class SmoothMeanMeter:
     def __init__(self,level1:int=5,level2:int=25,level3:int=75) -> None:
-        self._levels=[level3,level2,level1]
+        self._levels=[level1,level2,level3]
         self._qs=[deque(maxlen=x) for x in self._levels]
     
     def add(self,x:float,n:int=1):
         for q in self._qs:
             for i in range(n):
                 q.append(x)
+    
+    def _sync_dist_nodes(self):
+        raise NotImplemented
 
     def __str__(self):
         res=[]
@@ -28,6 +31,9 @@ class AverageMeter:
         self._cnt = 0
         self._avg=0
         pass
+
+    def _sync_dist_nodes(self):
+        raise NotImplemented
 
     def update(self, val: Number, n=1):
         self._val = val

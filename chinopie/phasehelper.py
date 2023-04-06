@@ -61,10 +61,10 @@ class PhaseHelper:
 
         self._custom_probe_name = custom_probes
 
-        self._score = 0.0
+        self._score = AverageMeter("")
         self._loss_probe = AverageMeter("")
         self._realtime_loss_probe=SmoothMeanMeter()
-        self._custom_probes = dict(
+        self._custom_probes:Dict[str,AverageMeter] = dict(
             [(x, AverageMeter(x)) for x in self._custom_probe_name]
         )
 
@@ -139,7 +139,7 @@ class PhaseHelper:
 
     def end_phase(self, score: float):
         self._score_updated = True
-        self._score = score
+        self._score.update(score)
 
     def _is_main_process(self):
         return self._ddp_session is None or self._ddp_session.is_main_process()
@@ -150,7 +150,7 @@ class PhaseHelper:
 
     @property
     def score(self):
-        return self._score
+        return self._score.average()
 
     @property
     def custom_probes(self):

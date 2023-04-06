@@ -13,9 +13,15 @@ class ModuleRecipe(ABC):
         pass
 
     def reg_params(self,helper:TrainHelper):
+        """
+        register hyperparameters here
+        """
         pass
 
     def prepare(self,helper:TrainHelper):
+        """
+        prepare models and probes here
+        """
         pass
 
     @abstractmethod
@@ -95,10 +101,11 @@ class ModuleRecipe(ABC):
         managed custom probe are supposed to be updated here
         """
         pass
+
     
     def after_iter(self,data,output,phase:str):
         """
-        your probes are supposed to be updated here
+        unmanaged probes are supposed to be updated here
         """
         ...
     
@@ -124,8 +131,14 @@ class ModuleRecipe(ABC):
         torch.save(data,ckpt)
     
     def before_epoch(self):
+        """
+        do schedular task here
+        """
         ...
 
     def after_epoch(self):
+        """
+        do schedular task here
+        """
         ...
                 
