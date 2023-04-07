@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 
 
 import torch
+import torch.backends.mps
 from torch import nn
 from torch.functional import Tensor
 from torch.utils.data.dataloader import DataLoader
@@ -80,7 +81,10 @@ class TrainHelper:
             if dev == "":
                 if torch.cuda.is_available():
                     self.dev = "cuda"
-                    logger.info("use cuda as default device")
+                    logger.info("cuda found. use cuda as default device")
+                elif torch.backends.mps.is_available():
+                    self.dev = "mps"
+                    logger.info("mps found. use mps as default device")
                 else:
                     self.dev = "cpu"
                     logger.info("use CPU as default device")
@@ -253,16 +257,19 @@ class TrainBootstrap:
         self._diagnose_mode = args.diagnose
         self._enable_ddp = False
         self._enable_prune=enable_prune
+
+        if self._enable_ddp:
+            self._init_ddp()
+        else:
+            self._ddp_session=None
+        
         if self._enable_prune:
             logger.info('early stop is enabled')
 
         self.file=GlobalFileHelper(disk_root, self._ddp_session)
         self._custom_params:Dict[str,Any]={}
 
-        if self._enable_ddp:
-            self._init_ddp()
-        else:
-            self._ddp_session=None
+        
         self._init_logger(args.verbose)
         check_gitignore([self._disk_root])
         
