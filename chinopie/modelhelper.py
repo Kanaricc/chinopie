@@ -21,7 +21,7 @@ from loguru import logger
 
 from .probes.avgmeter import AverageMeter
 from .datasets.fakeset import FakeEmptySet
-from .ddpsession import DdpSession
+from . import ddpsession as dist
 from .filehelper import GlobalFileHelper,InstanceFileHelper
 from .phasehelper import (
     PhaseHelper,
@@ -41,42 +41,40 @@ class TrainHelper:
         arg_str:Sequence[str],
         file_helper: InstanceFileHelper,
         dev: str,
-        ddp_session:Optional[DdpSession],
         global_params:Dict[str,Any],
     ) -> None:
         self.trial = trial
         self._arg_str=arg_str
         self.file=file_helper
-        self._ddp_session = ddp_session
         self._argparser=argparse.ArgumentParser()
         self._test_phase_enabled = False
 
-        if self._ddp_session:
+        if dist.is_enabled():
             logger.info(
-                f"[DDP] ddp is enabled. current rank is {self._ddp_session.get_rank()}."
+                f"[DDP] ddp is enabled. current rank is {dist.get_rank()}."
             )
             logger.info(
                 f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
             )
 
-            if self._is_main_process():
+            if dist.is_main_process():
                 logger.info(
-                    f"[DDP] rank {self._ddp_session.get_rank()} is the leader. methods are fully enabled."
+                    f"[DDP] rank {dist.get_rank()} is the leader. methods are fully enabled."
                 )
             else:
                 logger.info(
-                    f"[DDP] rank {self._ddp_session.get_rank()} is the follower. some methods are disabled."
+                    f"[DDP] rank {dist.get_rank()} is the follower. some methods are disabled."
                 )
 
-            world_size = self._ddp_session.get_world_size()
+            world_size = dist.get_world_size()
             assert world_size != -1, "helper must be init after dist"
             if world_size <= torch.cuda.device_count():
-                self.dev = f"cuda:{self._ddp_session.get_rank()}"
+                self.dev = f"cuda:{dist.get_rank()}"
             else:
                 logger.warning(
                     f"[DDP] world_size is larger than the number of devices. assume use CPU."
                 )
-                self.dev = f"cpu:{self._ddp_session.get_rank()}"
+                self.dev = f"cpu:{dist.get_rank()}"
         else:
             if dev == "":
                 if torch.cuda.is_available():
@@ -102,9 +100,6 @@ class TrainHelper:
     def _get_flag(self,key:str):
         return self._flags[key] if key in self._flags else None
 
-    def _is_main_process(self):
-        return self._ddp_session is None or self._ddp_session.is_main_process()
-
     def register_probe(self, name: str):
         self._custom_probes.append(name)
         logger.debug(f"register probe `{name}`")
@@ -120,7 +115,7 @@ class TrainHelper:
         logger.debug("registered train and val set")
         self._set_flag('trainval_data_set')
 
-        if self._ddp_session:
+        if dist.is_enabled():
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
             assert not isinstance(self._dataloader_val.sampler, DistributedSampler)
             logger.debug("ddp enabled, checked distributed sampler in train and val set")
@@ -131,7 +126,7 @@ class TrainHelper:
         logger.debug("registered test set. enabled test phase.")
         self._set_flag('test_data_set')
 
-        if self._ddp_session:
+        if dist.is_enabled():
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
             logger.debug("ddp enabled, checked distributed sampler in test set")
     
@@ -187,14 +182,14 @@ class TrainHelper:
     
     def update_tb(self, epochi:int, phase: PhaseHelper, tbwriter:SummaryWriter):
         assert phase._phase_name in ["train", "val", "test"]
-        if self._ddp_session:
+        if dist.is_enabled():
             phase.loss_probe._sync_dist_nodes()
             phase._score._sync_dist_nodes()
             for k in phase.custom_probes:
                 phase.custom_probes[k]._sync_dist_nodes()
 
         # only log probes in main process
-        if self._is_main_process():
+        if dist.is_main_process():
             tbwriter.add_scalar(
                 f"loss/{phase._phase_name}", phase.loss_probe.average(), epochi
             )
@@ -259,20 +254,16 @@ class TrainBootstrap:
         self._enable_prune=enable_prune
 
         if self._enable_ddp:
-            self._init_ddp()
-        else:
-            self._ddp_session=None
+            dist.enable_ddp()
         
         if self._enable_prune:
             logger.info('early stop is enabled')
 
-        self.file=GlobalFileHelper(disk_root, self._ddp_session)
+        self.file=GlobalFileHelper(disk_root)
         self._custom_params:Dict[str,Any]={}
 
-        
         self._init_logger(args.verbose)
         check_gitignore([self._disk_root])
-        
 
         if diagnose:
             torch.autograd.anomaly_mode.set_detect_anomaly(True)
@@ -321,7 +312,6 @@ class TrainBootstrap:
         
 
     def _init_ddp(self):
-        self._ddp_session = DdpSession()
         logger.info("initialized ddp")
 
     def _init_logger(self,verbose:bool):
@@ -333,11 +323,11 @@ class TrainBootstrap:
         # logger file
         if not os.path.exists("logs"):
             os.mkdir("logs")
-        if self._ddp_session:
+        if dist.is_enabled():
             logger.remove()
             logger.add(sys.stderr, level=stdout_level, format=LOGGER_FORMAT)
             logger.add(
-                f"logs/log_{self._comment}_r{self._ddp_session.get_rank()}.log",
+                f"logs/log_{self._comment}_r{dist.get_rank()}.log",
                 level=file_level,
                 format=LOGGER_FORMAT,
             )
@@ -419,7 +409,6 @@ class TrainBootstrap:
             arg_str=self._extra_arg_str,
             file_helper=trial_file,
             dev=self._dev,
-            ddp_session=self._ddp_session,
             global_params=self._custom_params,
         )
         recipe._set_helper(self.helper)
@@ -457,15 +446,15 @@ class TrainBootstrap:
         board_dir=recovered_board_dir if recovered_board_dir is not None else trial_file.default_board_dir
         tbwriter = SummaryWriter(board_dir)
         self._report_info(helper=self.helper,board_dir=tbwriter.log_dir)
-        if self._ddp_session:
-            self._ddp_session.barrier()
+        if dist.is_enabled():
+            dist.barrier()
         logger.warning("ready to train model")
         for epochi in range(self._epoch_num):
-            if not self._ddp_session:
+            if not dist.is_enabled():
                 logger.warning(f"=== START EPOCH {epochi} ===")
             else:
                 logger.warning(
-                    f"=== RANK {self._ddp_session.get_rank()} START EPOCH {epochi} ==="
+                    f"=== RANK {dist.get_rank()} START EPOCH {epochi} ==="
                 )
             
             recipe.before_epoch()
@@ -525,7 +514,7 @@ class TrainBootstrap:
                 need_save_best=True
             else:
                 need_save_best=False
-            if self.helper._is_main_process() and self._save_checkpoint:
+            if dist.is_main_process() and self._save_checkpoint:
                 # force saving ckpt in diagnose mode
                 if self._diagnose_mode:
                     need_save_best=True
@@ -537,8 +526,8 @@ class TrainBootstrap:
                 }
                 if need_save_period:recipe.save_ckpt(trial_file.get_checkpoint_slot(epochi),extra_state=state)
                 if need_save_best:recipe.save_ckpt(trial_file.get_best_checkpoint_slot(),extra_state=state)
-            if self._ddp_session:
-                self._ddp_session.barrier()
+            if dist.is_enabled():
+                dist.barrier()
             
             trial.report(score,epochi)
             # early stop
@@ -555,13 +544,13 @@ class TrainBootstrap:
         return best_score    
     
     def _end_phase(self,epochi:int,phase:PhaseHelper):
-        if not self._ddp_session:
+        if not dist.is_enabled():
             logger.warning(
                 f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
             )
         else:
             logger.warning(
-                f"|| RANK {self._ddp_session.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+                f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
             )
 
 

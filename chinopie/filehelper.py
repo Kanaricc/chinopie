@@ -2,7 +2,7 @@ import os,shutil
 from typing import Optional,List
 from datetime import datetime
 
-from .ddpsession import DdpSession
+from . import ddpsession as dist
 from loguru import logger
 import pathlib
 
@@ -14,12 +14,11 @@ DIR_TENSORBOARD = "boards"
 
 class GlobalFileHelper:
     def __init__(
-            self, disk_root: str, ddp_session: Optional[DdpSession] = None
+            self, disk_root: str,
     ):
         self.disk_root = disk_root
-        self.ddp_session = ddp_session
 
-        if self._is_main_process():
+        if dist.is_main_process():
             if not os.path.exists(os.path.join(self.disk_root, DIR_CHECKPOINTS)):
                 os.mkdir(os.path.join(self.disk_root, DIR_CHECKPOINTS))
             if not os.path.exists(os.path.join(self.disk_root, DIR_TENSORBOARD)):
@@ -29,9 +28,9 @@ class GlobalFileHelper:
             if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
-        if self.ddp_session:
+        if dist.is_enabled():
             logger.debug("found initialized ddp session")
-            DdpSession.barrier()
+            dist.barrier()
             logger.debug("waited for filehelper distributed initialization")
     
     def get_dataset_slot(self, dataset_id: str) -> str:
@@ -45,21 +44,17 @@ class GlobalFileHelper:
         return path
     
     def get_exp_instance(self,comment:str):
-        return InstanceFileHelper(self.disk_root,comment,self,self.ddp_session)
-
-    def _is_main_process(self):
-        return self.ddp_session is None or DdpSession.is_main_process()
+        return InstanceFileHelper(self.disk_root,comment,self)
 
 class InstanceFileHelper:
     def __init__(
-            self, disk_root: str, comment: str, parent:GlobalFileHelper, ddp_session: Optional[DdpSession] = None
+            self, disk_root: str, comment: str, parent:GlobalFileHelper
     ):
         self.disk_root = disk_root
-        self.ddp_session = ddp_session
         self.comment = comment
         self._parent=parent
 
-        if self._is_main_process():
+        if dist.is_main_process():
             if not os.path.exists(os.path.join(self.disk_root, DIR_CHECKPOINTS)):
                 os.mkdir(os.path.join(self.disk_root, DIR_CHECKPOINTS))
             if not os.path.exists(os.path.join(self.disk_root, DIR_TENSORBOARD)):
@@ -69,9 +64,9 @@ class InstanceFileHelper:
             if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
-        if self.ddp_session:
+        if dist.is_enabled():
             logger.debug("found initialized ddp session")
-            DdpSession.barrier()
+            dist.barrier()
             logger.debug("waited for filehelper distributed initialization")
 
         self.ckpt_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
@@ -83,10 +78,10 @@ class InstanceFileHelper:
 
     def prepare_checkpoint_dir(self):
         if not os.path.exists(self.ckpt_dir):
-            if self._is_main_process():
+            if dist.is_main_process():
                 os.mkdir(self.ckpt_dir)
-        if self.ddp_session:
-            DdpSession.barrier()
+        if dist.is_enabled():
+            dist.barrier()
 
     def find_latest_checkpoint(self) -> Optional[str]:
         """
@@ -119,21 +114,21 @@ class InstanceFileHelper:
             return os.path.join(self.ckpt_dir, latest_checkpoint_path)
 
     def get_initparams_slot(self) -> str:
-        if not self._is_main_process():
+        if not dist.is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
         logger.info("[INIT] you have ask for initialization slot")
         filename = f"init.pth"
         return os.path.join(self.ckpt_dir, filename)
 
     def get_checkpoint_slot(self, cur_epoch: int) -> str:
-        if not self._is_main_process():
+        if not dist.is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
         filename = f"checkpoint-{cur_epoch}.pth"
         return os.path.join(self.ckpt_dir, filename)
     
 
     def get_best_checkpoint_slot(self) -> str:
-        if not self._is_main_process():
+        if not dist.is_main_process():
             logger.warning("[DDP] try to get checkpoint slot on follower")
         return os.path.join(self.ckpt_dir, "best.pth")
     
@@ -148,6 +143,3 @@ class InstanceFileHelper:
     
     def get_state_slot(self,*name:str)->str:
         return self._parent.get_state_slot(*name)
-
-    def _is_main_process(self):
-        return self.ddp_session is None or DdpSession.is_main_process()
