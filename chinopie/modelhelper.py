@@ -46,8 +46,6 @@ class TrainHelper:
         self.trial = trial
         self._arg_str=arg_str
         self.file=file_helper
-        self._argparser=argparse.ArgumentParser()
-        self._test_phase_enabled = False
 
         if dist.is_enabled():
             logger.info(
@@ -250,11 +248,9 @@ class TrainBootstrap:
         self._checkpoint_save_period = checkpoint_save_period
         self._dev = args.dev
         self._diagnose_mode = args.diagnose
-        self._enable_ddp = False
         self._enable_prune=enable_prune
 
-        if self._enable_ddp:
-            dist.enable_ddp()
+        # TODO: ddp
         
         if self._enable_prune:
             logger.info('early stop is enabled')
@@ -418,11 +414,10 @@ class TrainBootstrap:
         best_score=self._inf_score
         # check diagnose mode
         if self._diagnose_mode:
-            logger.info("diagnose mode is enabled. run 2 epochs.")
+            logger.info("diagnose mode is enabled. run 2 epochs only.")
             self._epoch_num = 2
         
         recovered_epoch=None
-        recovered_board_dir=None
         if self._load_checkpoint:
             latest_ckpt_path=trial_file.find_latest_checkpoint()
             if latest_ckpt_path is not None:
@@ -434,7 +429,6 @@ class TrainBootstrap:
                 state=recipe.restore_ckpt(latest_ckpt_path)
                 recovered_epoch=state['cur_epochi']
                 best_score=state['best_score']
-                recovered_board_dir=state['board_dir']
         
         assert self.helper._get_flag('trainval_data_set'), "train or val set not set"
         if not self.helper._get_flag('test_data_set'):
@@ -443,8 +437,7 @@ class TrainBootstrap:
         # create checkpoint dir
         trial_file.prepare_checkpoint_dir()
         # create board dir before training
-        board_dir=recovered_board_dir if recovered_board_dir is not None else trial_file.default_board_dir
-        tbwriter = SummaryWriter(board_dir)
+        tbwriter = SummaryWriter(trial_file.default_board_dir)
         self._report_info(helper=self.helper,board_dir=tbwriter.log_dir)
         if dist.is_enabled():
             dist.barrier()
@@ -490,7 +483,7 @@ class TrainBootstrap:
             score=phase.score
             self._end_phase(epochi,phase)
 
-            if self.helper._test_phase_enabled:
+            if self.helper._get_flag('test_data_set'):
                 phase=PhaseHelper(
                     "val",
                     self.helper._data_val,
@@ -522,7 +515,6 @@ class TrainBootstrap:
                 state={
                     'cur_epochi':epochi,
                     'best_score':best_score,
-                    'board_dir':tbwriter.log_dir,
                 }
                 if need_save_period:recipe.save_ckpt(trial_file.get_checkpoint_slot(epochi),extra_state=state)
                 if need_save_best:recipe.save_ckpt(trial_file.get_best_checkpoint_slot(),extra_state=state)
@@ -541,7 +533,8 @@ class TrainBootstrap:
             if os.path.exists(trial_file.default_board_dir):
                 shutil.rmtree(trial_file.default_board_dir)
             logger.info("removed ckpt and board")
-        return best_score    
+        
+        return best_score
     
     def _end_phase(self,epochi:int,phase:PhaseHelper):
         if not dist.is_enabled():
