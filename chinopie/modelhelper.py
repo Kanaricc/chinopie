@@ -21,7 +21,7 @@ from loguru import logger
 
 from .probes.avgmeter import AverageMeter
 from .datasets.fakeset import FakeEmptySet
-from . import ddpsession as dist
+from . import iddp as dist
 from .filehelper import GlobalFileHelper,InstanceFileHelper
 from .phasehelper import (
     PhaseHelper,
@@ -460,7 +460,6 @@ class TrainBootstrap:
                 "train",
                 self.helper._data_train,
                 self.helper._dataloader_train,
-                ddp_session=None,
                 dry_run=self._diagnose_mode,
                 custom_probes=self.helper._custom_probes.copy(),
                 dev=self.helper.dev
@@ -473,7 +472,6 @@ class TrainBootstrap:
                 "val",
                 self.helper._data_val,
                 self.helper._dataloader_val,
-                ddp_session=None,
                 dry_run=self._diagnose_mode,
                 custom_probes=self.helper._custom_probes.copy(),
                 dev=self.helper.dev
@@ -488,7 +486,6 @@ class TrainBootstrap:
                     "val",
                     self.helper._data_val,
                     self.helper._dataloader_val,
-                    ddp_session=None,
                     dry_run=self._diagnose_mode,
                     custom_probes=self.helper._custom_probes.copy(),
                     dev=self.helper.dev

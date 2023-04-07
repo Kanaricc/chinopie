@@ -9,7 +9,7 @@ from loguru import logger
 from tqdm import tqdm
 
 from .probes import AverageMeter,SmoothMeanMeter
-from .ddpsession import DdpSession
+from . import iddp as dist
 
 class FunctionalSection:
     class JumpSectionException(Exception):
@@ -48,13 +48,11 @@ class PhaseHelper:
             dataset: Any,
             dataloader: DataLoader,
             dev:Any,
-            ddp_session: Optional[DdpSession] = None,
             dry_run: bool = False,
             custom_probes: List[str] = [],
     ) -> None:
         self._phase_name = phase_name
         self._dry_run = dry_run
-        self._ddp_session = ddp_session
         self._dataset = dataset
         self._dataloader = dataloader
         self._dev=dev
@@ -77,7 +75,7 @@ class PhaseHelper:
 
     def range_data(self):
         batch_len = len(self._dataloader)
-        if self._is_main_process():
+        if dist.is_main_process():
             with tqdm(total=batch_len,ncols=64) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._dry_run:
@@ -140,9 +138,6 @@ class PhaseHelper:
     def end_phase(self, score: float):
         self._score_updated = True
         self._score.update(score)
-
-    def _is_main_process(self):
-        return self._ddp_session is None or self._ddp_session.is_main_process()
 
     @property
     def loss_probe(self):

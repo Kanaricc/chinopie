@@ -2,7 +2,7 @@ import os,shutil
 from typing import Optional,List
 from datetime import datetime
 
-from . import ddpsession as dist
+from . import iddp as dist
 from loguru import logger
 import pathlib
 
