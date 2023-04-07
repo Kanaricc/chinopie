@@ -4,7 +4,19 @@ from datetime import datetime
 from typing import Optional
 from git.repo import Repo
 from loguru import logger
+from torch import nn
 import os
+
+def copy_model(model:nn.Module):
+    model_copy = type(model)() # get a new instance
+    model_copy.load_state_dict(model.state_dict()) # copy weights and stuff
+    return model_copy
+
+def freeze_model(model:nn.Module,eval:bool=True):
+    for param in model.parameters():
+        param.requires_grad_(False)
+    if eval:
+        model.eval()
 
 def create_snapshot(comment:Optional[str]=None):
     date=datetime.now().strftime("%Y%m%d%H%M%S")
