@@ -14,6 +14,7 @@ import urllib.request
 import zipfile
 from tqdm import tqdm
 
+from .. import download_with_progress,extract_zip
 from . import MultiLabelLocalDataset
 
 URLS = {
@@ -22,25 +23,6 @@ URLS = {
     "annotations": "http://images.cocodataset.org/annotations/annotations_trainval2014.zip",
 }
 
-class TqdmUpTo(tqdm):
-    """Alternative Class-based version of the above.
-    Provides `update_to(n)` which uses `tqdm.update(delta_n)`.
-    Inspired by [twine#242](https://github.com/pypa/twine/pull/242),
-    [here](https://github.com/pypa/twine/commit/42e55e06).
-    """
-
-    def update_to(self, b=1, bsize=1, tsize=None):
-        """
-        b  : int, optional
-            Number of blocks transferred so far [default: 1].
-        bsize  : int, optional
-            Size of each block (in tqdm units) [default: 1].
-        tsize  : int, optional
-            Total size (in tqdm units). If [default: None] remains unchanged.
-        """
-        if tsize is not None:
-            self.total = tsize
-        self.update(b * bsize - self.n)  # will also set self.n = b * bsize
 
 def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
     work_dir = os.getcwd()
@@ -64,8 +46,8 @@ def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
     cached_file = os.path.join(tmpdir, filename)
     if not os.path.exists(cached_file):
         logger.info(f"downloading {URLS[phase+'_img']} to {cached_file}")
-        with TqdmUpTo() as progress:
-            urllib.request.urlretrieve(URLS[phase + "_img"],cached_file,reporthook=progress.update_to)
+
+        download_with_progress(URLS[phase + "_img"],cached_file)
 
     # extract image
     img_data = os.path.join(root, filename.split(".")[0])
@@ -75,8 +57,7 @@ def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
                 file=cached_file, path=root
             )
         )
-        with zipfile.ZipFile(cached_file,'r') as f:
-            f.extractall(root)
+        extract_zip(cached_file,root)
     logger.info("[dataset] Done!")
 
     # train/val images/annotations
@@ -85,8 +66,7 @@ def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
         logger.info(
             'Downloading: "{}" to {}\n'.format(URLS["annotations"], cached_file)
         )
-        with TqdmUpTo() as progress:
-            urllib.request.urlretrieve(URLS["annotations"],cached_file,reporthook=progress.update_to)
+        download_with_progress(URLS["annotations"],cached_file)
     annotations_data = os.path.join(root, "annotations")
     if not os.path.exists(annotations_data):
         logger.info(
@@ -94,8 +74,7 @@ def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
                 file=cached_file, path=root
             )
         )
-        with zipfile.ZipFile(cached_file,'r') as f:
-            f.extractall(root)
+        extract_zip(cached_file,root)
     logger.info("[annotation] Done!")
 
     annotations_data = os.path.join(root, "annotations")
@@ -181,9 +160,6 @@ def _get_preprocess(phase:str):
         ])
 
 class COCO2014Dataset(MultiLabelLocalDataset):
-    img_list: List[Any]
-    one_hot: bool
-
     def __init__(self,root:str,phase:str,preprocess:Optional[Any],extra_preprocess:Optional[Any]=None,negatives_as_neg1=False) -> None:
         assert phase in ['train', 'val']
         self.root = os.path.abspath(root)

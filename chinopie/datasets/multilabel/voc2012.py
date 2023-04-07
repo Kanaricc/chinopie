@@ -4,6 +4,7 @@ import subprocess
 from typing import Any, List, Optional, Tuple
 import json
 from PIL import Image
+from xml.dom import minidom
 import torch
 from torch.functional import Tensor
 import shutil
@@ -14,7 +15,8 @@ from torch import nn
 import torch.nn.functional as F
 from loguru import logger
 
-from . import MultiLabelDataset,MultiLabelSample
+from .. import download_with_progress,extract_zip
+from . import MultiLabelLocalDataset
 
 
 DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar"
@@ -51,7 +53,7 @@ def get_voc_labels() -> List[str]:
     return keys
 
 
-def prepare_voc12(root: str):
+def prepare_voc12(root: str,ignore_difficult_label:bool=True):
     work_dir = os.getcwd()
 
     if not os.path.exists(root):
@@ -65,26 +67,25 @@ def prepare_voc12(root: str):
     cached_file = os.path.join(tmp_dir, "VOCtrainval_11-May-2012.tar")
     if not os.path.exists(cached_file):
         logger.warning(f"downloading voc12 dataset")
-        subprocess.call(f"wget -O {cached_file} {DATA_URL}", shell=True)
+        download_with_progress(DATA_URL,cached_file)
         logger.warning("done")
 
     extracted_dir = os.path.join(tmp_dir, "extracted")
     if not os.path.exists(extracted_dir):
         logger.warning(f"extracting dataset")
         os.mkdir(extracted_dir)
-        subprocess.call(f"tar -xf {cached_file} -C {extracted_dir}", shell=True)
+        extract_zip(cached_file,extracted_dir)
         logger.warning("done")
 
     vocdevkit = os.path.join(extracted_dir, "VOCdevkit", "VOC2012")
+    anno_path=os.path.join(vocdevkit, "Annotations")
     assert os.path.exists(vocdevkit)
 
     img_dir = os.path.join(root, "img")
     if not os.path.exists(img_dir):
         logger.warning(f"refactor images dir structure")
         assert os.path.exists(os.path.join(vocdevkit, "JPEGImages"))
-        subprocess.call(
-            f"mv '{os.path.join(vocdevkit,'JPEGImages')}' '{img_dir}'", shell=True
-        )
+        shutil.move(os.path.join(vocdevkit,'JPEGImages'),img_dir)
         logger.warning("done")
 
     cat_json = os.path.join(root, "categories.json")
@@ -98,8 +99,11 @@ def prepare_voc12(root: str):
         logger.warning(f"generating annotations json")
         labels_dir = os.path.join(vocdevkit, "ImageSets", "Main")
 
-        for phase in ["train", "val"]:
+        warning_ignorance=False
+        for phase in ["train", "val", "trainval", "test"]:
             img_annotations = {}
+            label_difficulty = {}
+            label_easy = {}
             img_ids = []
             for label in LABEL2ID:
                 label_file = os.path.join(labels_dir, f"{label}_{phase}.txt")
@@ -109,10 +113,36 @@ def prepare_voc12(root: str):
                         spline = list(map(lambda x: x.strip(), line.strip().split(" ")))
                         image_id, positive = spline[0], spline[-1]
                         if positive == "1":
+                            # first to see an image
                             if image_id not in img_annotations:
                                 img_annotations[image_id] = []
                                 img_ids.append(image_id)
-                            img_annotations[image_id].append(LABEL2ID[label])
+                                # load difficulty
+                                label_difficulty[image_id] = set()
+                                label_easy[image_id]=set()
+                                instance_anno=os.path.join(anno_path,f"{image_id}.xml")
+                                dom_tree=minidom.parse(instance_anno).documentElement
+                                objects=dom_tree.getElementsByTagName('object')
+                                for obj in objects:
+                                    if (obj.getElementsByTagName('difficult')[0].firstChild.data) == '1':
+                                        tag = obj.getElementsByTagName('name')[0].firstChild.data.lower()
+                                        label_difficulty[image_id].add(tag)
+                                    if (obj.getElementsByTagName('difficult')[0].firstChild.data) == '0':
+                                        tag = obj.getElementsByTagName('name')[0].firstChild.data.lower()
+                                        label_easy[image_id].add(tag)
+                                    
+                            if ignore_difficult_label:
+                                if label in label_easy[image_id]:
+                                    img_annotations[image_id].append(LABEL2ID[label])
+                                elif label not in label_difficulty[image_id]:
+                                    img_annotations[image_id].append(LABEL2ID[label])
+                                else:
+                                    if not warning_ignorance:
+                                        logger.debug(f"label like `{label}` will be ignored in `{image_id}` since it's tagged difficult.")
+                                        warning_ignorance=True
+                            else:
+                                img_annotations[image_id].append(LABEL2ID[label])
+
 
             anno: List = []
             for i, image_id in enumerate(img_ids):
@@ -129,92 +159,25 @@ def prepare_voc12(root: str):
         logger.warning("done")
 
 
-class VOC2012Dataset(MultiLabelDataset):
-    def __init__(
-        self,
-        root: str,
-        preprocess: Any,
-        phase: str = "train",
-        negatives_as_neg1: bool = False,
-    ):
-        assert phase == "train" or phase == "val"
+class VOC2012Dataset(MultiLabelLocalDataset):
+    def __init__(self, root:str,preprocess:Any,extra_preprocess=None,phase='train',negatives_as_neg1=False) -> None:
+        assert phase in ["train","val","trainval","test"]
         prepare_voc12(root)
 
-        self.root = root
-        self.preprocess = preprocess
-        self.phase = phase
-        self.negatives_as_neg1 = negatives_as_neg1
+        with open(os.path.join(root, f"annotations_{phase}.json"), "r") as f:
+            img_list = json.load(f)
+        with open(os.path.join(root, f"categories.json"), "r") as f:
+            cat2id = json.load(f)
 
-        with open(os.path.join(self.root, f"annotations_{self.phase}.json"), "r") as f:
-            self.img_list = json.load(f)
-        with open(os.path.join(self.root, f"categories.json"), "r") as f:
-            self.cat2id = json.load(f)
-
-        self.num_classes = len(self.cat2id)
-
-        full_set = set(range(self.num_classes))
-        for img in self.img_list:
-            img["negative_labels"] = list(full_set - set(img["labels"]))
 
         logger.warning(
-            f"[VOC2012] load num of classes {len(self.cat2id)}, num images {len(self.img_list)}"
+            f"[VOC2012] load num of classes {len(cat2id)}, num images {len(img_list)}"
         )
 
-    def reg_extra_preprocess(self, preprocess: Any):
-        self.extra_preprocess = preprocess
+        num_labels = len(cat2id)
+        img_paths=list(map(lambda x:os.path.join(root, "img", x['name']),img_list))
+        annotations=list(map(lambda x:x['labels'],img_list))
+        annotation_labels=get_voc_labels()
 
-    def __getitem__(self, index)->MultiLabelSample:
-        item = self.img_list[index]
 
-        _, filename, target, nagatives = (
-            item["id"],
-            item["name"],
-            item["labels"],
-            item["negative_labels"],
-        )
-        rgb_image = Image.open(os.path.join(self.root, "img", filename)).convert("RGB")
-        image = self.preprocess(rgb_image)
-
-        target2 = torch.zeros(self.num_classes, dtype=torch.int)
-        target2[target] = 1
-        if self.negatives_as_neg1:
-            target[nagatives] = -1
-
-        res:MultiLabelSample = {
-            "index": index,
-            "name": filename,
-            "image": image,
-            "extra_image":None,
-            "target": target2,
-        }
-        if hasattr(self, "extra_preprocess"):
-            extra_image = self.extra_preprocess(rgb_image)
-            res["extra_image"] = extra_image
-        return res
-
-    def __len__(self):
-        return len(self.img_list)
-
-    def retain(self, l: int, r: int):
-        self.img_list = self.img_list[l:r]
-
-    def get_all_labels(self):
-        tmp = torch.zeros((len(self.img_list), self.num_classes), dtype=torch.long)
-        for i in range(len(self.img_list)):
-            tmp[i][self.img_list[i]["labels"]] = 1
-            if self.negatives_as_neg1:
-                tmp[i][self.img_list[i]["negative_labels"]] = -1
-
-        return tmp
-
-    def apply_new_labels(self, labels: Tensor):
-        assert (
-            labels.size(0) == len(self.img_list) and labels.size(1) == self.num_classes
-        )
-        assert labels.dtype == torch.int or labels.dtype == torch.long
-        for i in range(len(self.img_list)):
-            label = labels[i]
-            self.img_list[i]["labels"] = (label == 1).nonzero(as_tuple=True)[0].tolist()
-            self.img_list[i]["negative_labels"] = (
-                (label == -1).nonzero(as_tuple=True)[0].tolist()
-            )
+        super().__init__(img_paths, num_labels, annotations, annotation_labels, preprocess, extra_preprocess, negatives_as_neg1)
