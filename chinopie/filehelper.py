@@ -12,13 +12,52 @@ DIR_CHECKPOINTS = "checkpoints"
 DIR_DATASET = "data"
 DIR_TENSORBOARD = "boards"
 
-class FileHelper:
+class GlobalFileHelper:
     def __init__(
-            self, disk_root: str, comment: str, ddp_session: Optional[DdpSession] = None
+            self, disk_root: str, ddp_session: Optional[DdpSession] = None
+    ):
+        self.disk_root = disk_root
+        self.ddp_session = ddp_session
+
+        if self._is_main_process():
+            if not os.path.exists(os.path.join(self.disk_root, DIR_CHECKPOINTS)):
+                os.mkdir(os.path.join(self.disk_root, DIR_CHECKPOINTS))
+            if not os.path.exists(os.path.join(self.disk_root, DIR_TENSORBOARD)):
+                os.mkdir(os.path.join(self.disk_root, DIR_TENSORBOARD))
+            if not os.path.exists(os.path.join(self.disk_root, DIR_DATASET)):
+                os.mkdir(os.path.join(self.disk_root, DIR_DATASET))
+            if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
+                os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
+
+        if self.ddp_session:
+            logger.debug("found initialized ddp session")
+            DdpSession.barrier()
+            logger.debug("waited for filehelper distributed initialization")
+    
+    def get_dataset_slot(self, dataset_id: str) -> str:
+        return os.path.join(self.disk_root, DIR_DATASET, dataset_id)
+    
+    def get_state_slot(self,*name:str)->str:
+        path=os.path.join(self.disk_root,DIR_SHARE_STATE,*name)
+        parent=pathlib.Path(path).parent
+        if not parent.exists():
+            os.makedirs(parent)
+        return path
+    
+    def get_exp_instance(self,comment:str):
+        return InstanceFileHelper(self.disk_root,comment,self,self.ddp_session)
+
+    def _is_main_process(self):
+        return self.ddp_session is None or DdpSession.is_main_process()
+
+class InstanceFileHelper:
+    def __init__(
+            self, disk_root: str, comment: str, parent:GlobalFileHelper, ddp_session: Optional[DdpSession] = None
     ):
         self.disk_root = disk_root
         self.ddp_session = ddp_session
         self.comment = comment
+        self._parent=parent
 
         if self._is_main_process():
             if not os.path.exists(os.path.join(self.disk_root, DIR_CHECKPOINTS)):
@@ -91,16 +130,7 @@ class FileHelper:
             logger.warning("[DDP] try to get checkpoint slot on follower")
         filename = f"checkpoint-{cur_epoch}.pth"
         return os.path.join(self.ckpt_dir, filename)
-
-    def get_dataset_slot(self, dataset_id: str) -> str:
-        return os.path.join(self.disk_root, DIR_DATASET, dataset_id)
     
-    def get_state_slot(self,*name:str)->str:
-        path=os.path.join(self.disk_root,DIR_SHARE_STATE,*name)
-        parent=pathlib.Path(path).parent
-        if not parent.exists():
-            os.makedirs(parent)
-        return path
 
     def get_best_checkpoint_slot(self) -> str:
         if not self._is_main_process():
@@ -112,6 +142,12 @@ class FileHelper:
         return os.path.join(
             self.disk_root,DIR_TENSORBOARD,self.comment,
         )
+    
+    def get_dataset_slot(self, dataset_id: str) -> str:
+        return self._parent.get_dataset_slot(dataset_id)
+    
+    def get_state_slot(self,*name:str)->str:
+        return self._parent.get_state_slot(*name)
 
     def _is_main_process(self):
         return self.ddp_session is None or DdpSession.is_main_process()

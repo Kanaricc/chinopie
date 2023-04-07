@@ -21,7 +21,7 @@ from loguru import logger
 from .probes.avgmeter import AverageMeter
 from .datasets.fakeset import FakeEmptySet
 from .ddpsession import DdpSession
-from .filehelper import FileHelper
+from .filehelper import GlobalFileHelper,InstanceFileHelper
 from .phasehelper import (
     PhaseHelper,
 )
@@ -38,20 +38,17 @@ class TrainHelper:
         self,
         trial: optuna.Trial,
         arg_str:Sequence[str],
-        disk_root: str,
-        comment: str,
+        file_helper: InstanceFileHelper,
         dev: str,
         ddp_session:Optional[DdpSession],
         global_params:Dict[str,Any],
     ) -> None:
         self.trial = trial
         self._arg_str=arg_str
-        self._comment = comment
+        self.file=file_helper
         self._ddp_session = ddp_session
         self._argparser=argparse.ArgumentParser()
         self._test_phase_enabled = False
-
-        self.file = FileHelper(disk_root, comment, self._ddp_session)
 
         if self._ddp_session:
             logger.info(
@@ -141,29 +138,6 @@ class TrainHelper:
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer
 
-    def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
-        if not self._ddp_session or disable_ddp_seed:
-            logger.info("[HELPER] fixed seed set for random and torch")
-            os.environ["PYTHONHASHSEED"] = str(seed)
-            random.seed(seed)
-
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
-
-            np.random.seed(seed)
-        else:
-            logger.info(
-                f"[HELPER|DDP] fixed seed `{seed + self._ddp_session.get_rank()}` set for this process"
-            )
-            os.environ["PYTHONHASHSEED"] = str(seed + self._ddp_session.get_rank())
-            random.seed(seed + self._ddp_session.get_rank())
-
-            torch.manual_seed(seed + self._ddp_session.get_rank())
-            torch.cuda.manual_seed(seed + self._ddp_session.get_rank())
-            torch.cuda.manual_seed_all(seed + self._ddp_session.get_rank())
-
-            np.random.seed(seed + self._ddp_session.get_rank())
 
     def suggest_category(
         self, name: str, choices: Sequence[CategoricalChoiceType]
@@ -282,6 +256,7 @@ class TrainBootstrap:
         if self._enable_prune:
             logger.info('early stop is enabled')
 
+        self.file=GlobalFileHelper(disk_root, self._ddp_session)
         self._custom_params:Dict[str,Any]={}
 
         if self._enable_ddp:
@@ -301,6 +276,18 @@ class TrainBootstrap:
                 logger.info("created snapshot")
             else:
                 logger.info("snapshot is disabled in diagnose mode")
+    
+    def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
+        logger.info("fixed seed set for random and torch")
+        os.environ["PYTHONHASHSEED"] = str(seed)
+        random.seed(seed)
+
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+        np.random.seed(seed)
     
     def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
         if name not in self._custom_params:
@@ -380,6 +367,7 @@ class TrainBootstrap:
         else:
             stage_comment=f"{self._comment}({stage})"
         
+        self.ifile=self.file.get_exp_instance(stage_comment)
         if not os.path.exists("opts"):
             os.mkdir("opts")
         storage_path = os.path.join("opts", f"{stage_comment}.db")
@@ -397,15 +385,8 @@ class TrainBootstrap:
             n_trials=3
         study.optimize(lambda x: self._wrapper(x,recipe,stage_comment), n_trials=n_trials, gc_after_trial=True)
 
-        if self._diagnose_mode:
-            # remove checkpoints and boards
-            if os.path.exists(self.helper.file.ckpt_dir):
-                shutil.rmtree(self.helper.file.ckpt_dir)
-            if os.path.exists(self.helper.file.default_board_dir):
-                shutil.rmtree(self.helper.file.default_board_dir)
-            logger.info("removed ckpt and board")
-            logger.warning("========== Diagnose End ==========")
-        else:
+        # post process
+        if not self._diagnose_mode:
             best_params = study.best_params
             best_value = study.best_value
             best_trial=study.best_trial
@@ -415,18 +396,21 @@ class TrainBootstrap:
             )
             logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
-            target_helper=FileHelper(self._disk_root,f"{stage_comment}")
-            shutil.copytree(self.tbwriter.log_dir,target_helper.default_board_dir)
-            shutil.copytree(self.helper.file.ckpt_dir,target_helper.ckpt_dir)
+            best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
+            target_helper=self.file.get_exp_instance(stage_comment)
+            shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
+            shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
             logger.info("copied best trial as the final result")
+
+        
         logger.warning("[BOOTSTRAP] good luck!")
 
     def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, comment:str) -> float | Sequence[float]:
+        trial_file=self.file.get_exp_instance(f"{comment}_trial{trial._trial_id}")
         self.helper = TrainHelper(
             trial,
             arg_str=self._extra_arg_str,
-            disk_root=self._disk_root,
-            comment=f"{comment}_trial{trial._trial_id}",
+            file_helper=trial_file,
             dev=self._dev,
             ddp_session=self._ddp_session,
             global_params=self._custom_params,
@@ -444,7 +428,7 @@ class TrainBootstrap:
         recovered_epoch=None
         recovered_board_dir=None
         if self._load_checkpoint:
-            latest_ckpt_path=self.helper.file.find_latest_checkpoint()
+            latest_ckpt_path=trial_file.find_latest_checkpoint()
             if latest_ckpt_path is not None:
                 logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
             else:
@@ -461,11 +445,11 @@ class TrainBootstrap:
             logger.warning("test set not set. test phase will be skipped.")
         
         # create checkpoint dir
-        self.helper.file.prepare_checkpoint_dir()
+        trial_file.prepare_checkpoint_dir()
         # create board dir before training
-        board_dir=recovered_board_dir if recovered_board_dir is not None else self.helper.file.default_board_dir
-        self.tbwriter = SummaryWriter(board_dir)
-        self._report_info(helper=self.helper,board_dir=self.tbwriter.log_dir)
+        board_dir=recovered_board_dir if recovered_board_dir is not None else trial_file.default_board_dir
+        tbwriter = SummaryWriter(board_dir)
+        self._report_info(helper=self.helper,board_dir=tbwriter.log_dir)
         if self._ddp_session:
             self._ddp_session.barrier()
         logger.warning("ready to train model")
@@ -542,10 +526,10 @@ class TrainBootstrap:
                 state={
                     'cur_epochi':epochi,
                     'best_score':best_score,
-                    'board_dir':self.tbwriter.log_dir,
+                    'board_dir':tbwriter.log_dir,
                 }
-                if need_save_period:recipe.save_ckpt(self.helper.file.get_checkpoint_slot(epochi),extra_state=state)
-                if need_save_best:recipe.save_ckpt(self.helper.file.get_best_checkpoint_slot(),extra_state=state)
+                if need_save_period:recipe.save_ckpt(trial_file.get_checkpoint_slot(epochi),extra_state=state)
+                if need_save_best:recipe.save_ckpt(trial_file.get_best_checkpoint_slot(),extra_state=state)
             if self._ddp_session:
                 self._ddp_session.barrier()
             
@@ -553,7 +537,14 @@ class TrainBootstrap:
             # early stop
             if self._enable_prune and trial.should_prune():
                 raise optuna.TrialPruned()
-
+        
+        if self._diagnose_mode:
+            # remove checkpoints and boards
+            if os.path.exists(trial_file.ckpt_dir):
+                shutil.rmtree(trial_file.ckpt_dir)
+            if os.path.exists(trial_file.default_board_dir):
+                shutil.rmtree(trial_file.default_board_dir)
+            logger.info("removed ckpt and board")
         return best_score    
     
     def _end_phase(self,epochi:int,phase:PhaseHelper):
