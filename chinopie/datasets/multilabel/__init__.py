@@ -89,6 +89,9 @@ class MultiLabelLocalDataset(MultiLabelDataset):
             "extra_image":extra_image,
             "target": target,
         }
+        if extra_image is None:
+            # TODO: this should be fixed in python 3.11
+            del res['extra_image'] # type: ignore
         return res
 
     def __len__(self) -> int:

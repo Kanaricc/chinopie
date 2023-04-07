@@ -41,15 +41,23 @@ class ModuleRecipe(ABC):
     def optimizer(self):
         return self._helper._optimizer
     
+    def switch_train(self,model:nn.Module):
+        # TODO: check consistency
+        model.train()
+    
+    def switch_eval(self,model:nn.Module):
+        # TODO: check consistency
+        model.eval()
+    
     def run_train_phase(self,p:PhaseHelper):
-        self.model.train()
+        self.switch_train(self.model)
         for batchi,data in p.range_data():
             # TODO: check device
             self.run_train_iter(data,p)
         p.end_phase(self.report_score('train'))
 
     def run_val_phase(self,p:PhaseHelper):
-        self.model.eval()
+        self.switch_eval(self.model)
         for batchi,data in p.range_data():
             self.run_val_iter(data,p)
         p.end_phase(self.report_score('val'))

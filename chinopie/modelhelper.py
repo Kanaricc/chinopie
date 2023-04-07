@@ -137,7 +137,7 @@ class TrainHelper:
     
     def reg_model(self,model:nn.Module):
         self._model=model
-        # TODO: move device
+        self._model=model.to(self.dev)
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer
