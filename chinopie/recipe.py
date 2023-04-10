@@ -1,10 +1,15 @@
-from typing import Sequence,Any,Dict,TypeVar,Generic
+import pdb
+from typing import Sequence,Any,Dict,TypeVar,Generic,Optional
 from abc import ABC,abstractmethod
 import torch
 from torch import nn,Tensor
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+import chinopie
+from chinopie import logger
 from chinopie.modelhelper import TrainHelper,PhaseHelper
+
 
 
 
@@ -18,15 +23,23 @@ class ModuleRecipe(ABC):
         """
         pass
 
-    def prepare(self,helper:TrainHelper):
+    def prepare(self,helper:TrainHelper,inherited_states:Dict[str,Any]):
         """
         prepare models and probes here
         """
         pass
 
+    def end(self,helper:TrainHelper)->Dict[str,Any]:
+        logger.info("pass empty state to next stage")
+        return {}
+
     @abstractmethod
     def set_optimizers(self,model,helper:TrainHelper)->Optimizer:
         ...
+
+    def set_scheduler(self,optimizer:Optimizer)->Optional[LRScheduler]:
+        logger.info(f"no scheduler set for optimizer `{optimizer}`")
+        return None
     
     # TODO: this should be removed
     def _set_helper(self,helper:TrainHelper):
@@ -41,18 +54,27 @@ class ModuleRecipe(ABC):
     def optimizer(self):
         return self._helper._optimizer
     
+    @property
+    def scheduler(self):
+        if hasattr(self._helper,'_scheduler'):
+            return self._helper._scheduler
+        return None
+    
+    @property
+    def dev(self):
+        return self._helper.dev
+    
     def switch_train(self,model:nn.Module):
         # TODO: check consistency
-        model.train()
+        chinopie.set_train(model)
     
     def switch_eval(self,model:nn.Module):
         # TODO: check consistency
-        model.eval()
+        chinopie.set_eval(model)
     
     def run_train_phase(self,p:PhaseHelper):
         self.switch_train(self.model)
         for batchi,data in p.range_data():
-            # TODO: check device
             self.run_train_iter(data,p)
         p.end_phase(self.report_score('train'))
 
@@ -70,31 +92,34 @@ class ModuleRecipe(ABC):
         p.end_phase(self.report_score('test'))
     
     def run_train_iter(self,data,p:PhaseHelper):
-        output=self.forward(data)
-        loss=self.cal_loss(data,output)
+        dev_data=chinopie.any_to(data,self.dev)
+        output=self.forward(dev_data)
+        loss=self.cal_loss(dev_data,output)
 
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
         p.update_loss(loss.detach().cpu())
-        self.update_probe(data,output,p)
+        self.update_probe(data,chinopie.any_to(output,'cpu'),p)
         self.after_iter(data,output,'train')
     
     def run_val_iter(self,data,p:PhaseHelper):
         with torch.no_grad():
-            output=self.forward(data)
-            loss=self.cal_loss(data,output)
+            dev_data=chinopie.any_to(data,self.dev)
+            output=self.forward(dev_data)
+            loss=self.cal_loss(dev_data,output)
             p.update_loss(loss.detach().cpu())
-            self.update_probe(data,output,p)
-        self.after_iter(data,output,'val')
+            self.update_probe(data,chinopie.any_to(output,'cpu'),p)
+        self.after_iter(dev_data,output,'val')
     
     def run_test_iter(self,data,p:PhaseHelper):
         with torch.no_grad():
-            output=self.forward(data)
-            loss=self.cal_loss(data,output)
+            dev_data=chinopie.any_to(data,self.dev)
+            output=self.forward(dev_data)
+            loss=self.cal_loss(dev_data,output)
             p.update_loss(loss.detach().cpu())
-            self.update_probe(data,output,p)
-        self.after_iter(data,output,'test')
+            self.update_probe(data,chinopie.any_to(output,'cpu'),p)
+        self.after_iter(dev_data,output,'test')
     
     @abstractmethod
     def forward(self,data)->Any:
@@ -128,6 +153,11 @@ class ModuleRecipe(ABC):
         data=torch.load(ckpt,map_location='cpu')
         self.model.load_state_dict(data['model'])
         self.optimizer.load_state_dict(data['optimizer'])
+        if self.scheduler is not None:
+            self.scheduler.load_state_dict(data['scheduler'])
+        else:
+            if 'scheduler' in data:
+                logger.warning("found scheduler state in checkpoint but no scheduler is set")
         return data['extra']
     
     def save_ckpt(self,ckpt:str,extra_state:Any):
@@ -136,6 +166,8 @@ class ModuleRecipe(ABC):
             'optimizer':self.optimizer.state_dict(),
             'extra':extra_state,
         }
+        if self.scheduler is not None:
+            data['scheduler']=self.scheduler.state_dict(),
         torch.save(data,ckpt)
     
     def before_epoch(self):
@@ -148,5 +180,6 @@ class ModuleRecipe(ABC):
         """
         do schedular task here
         """
-        ...
+        if self.scheduler is not None:
+            self.scheduler.step()
                 

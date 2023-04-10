@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Optional
 from git.repo import Repo
 from loguru import logger
-from torch import nn
+from torch import nn,Tensor
 import os
 
 def copy_model(model:nn.Module):
@@ -17,6 +17,21 @@ def freeze_model(model:nn.Module,eval:bool=True):
         param.requires_grad_(False)
     if eval:
         model.eval()
+
+def unfreeze_model(model:nn.Module):
+    for param in model.parameters():
+        param.requires_grad_(True)
+
+def set_train(model:nn.Module,eval_on_nograd_module:bool=True):
+    for mod in model.modules():
+        has_require_grad=False
+        for param in mod.parameters():
+            has_require_grad|=param.requires_grad
+        if not has_require_grad and eval_on_nograd_module:
+            mod.eval()
+
+def set_eval(model:nn.Module):
+    model.eval()
 
 def create_snapshot(comment:Optional[str]=None):
     date=datetime.now().strftime("%Y%m%d%H%M%S")
@@ -84,3 +99,18 @@ def show_params_in_3cols(params:Optional[Dict[str,Any]]=None,name:Optional[List[
         table.add_column("params",name[i*col_len:(i+1)*col_len],"l")
         table.add_column("values",val[i*col_len:(i+1)*col_len],"c")
     return table
+
+
+def any_to(data:Any,device:Any):
+    if isinstance(data,Tensor):
+        return data.to(device)
+    elif isinstance(data,(list,tuple)):
+        if len(data)==0:return type(data)()
+        return type(data)(map(lambda x:any_to(x,device),data))
+    elif isinstance(data,dict):
+        res={}
+        for k,v in data.items():
+            res[k]=any_to(v,device)
+        return res
+    else:
+        return data
