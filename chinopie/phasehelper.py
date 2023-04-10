@@ -10,6 +10,7 @@ from tqdm import tqdm
 
 from .probes import AverageMeter,SmoothMeanMeter
 from . import iddp as dist
+from .utils import any_to
 
 class FunctionalSection:
     class JumpSectionException(Exception):
@@ -81,7 +82,6 @@ class PhaseHelper:
                     if self._dry_run:
                         logger.info("data preview")
                         logger.info(data)
-                    # TODO: memory copy
                     yield batchi, data
                     progressbar.update()
                     progressbar.set_postfix({'loss':self._realtime_loss_probe})

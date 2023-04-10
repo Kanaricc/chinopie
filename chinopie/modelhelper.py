@@ -14,6 +14,7 @@ from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
 from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
 import optuna
 from optuna.distributions import CategoricalChoiceType
 import numpy as np
@@ -134,7 +135,9 @@ class TrainHelper:
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer
-
+    
+    def _reg_scheduler(self,scheduler:LRScheduler):
+        self._scheduler=scheduler
 
     def suggest_category(
         self, name: str, choices: Sequence[CategoricalChoiceType]
@@ -233,6 +236,7 @@ class TrainBootstrap:
         argparser.add_argument('--dev',type=str,default=dev)
         argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
+        argparser.add_argument('--clear',action='store_true',default=verbose)
         args,self._extra_arg_str=argparser.parse_known_args()
         self._argparser=argparse.ArgumentParser()
         
@@ -250,15 +254,17 @@ class TrainBootstrap:
         self._diagnose_mode = args.diagnose
         self._enable_prune=enable_prune
 
-        # TODO: ddp
-        
-        if self._enable_prune:
-            logger.info('early stop is enabled')
+        self._init_logger(args.verbose)
 
         self.file=GlobalFileHelper(disk_root)
         self._custom_params:Dict[str,Any]={}
 
-        self._init_logger(args.verbose)
+        if self._enable_prune:
+            logger.info('early stop is enabled')
+        if args.clear:
+            # do clear
+            input("are you sure to clear all state files and logs? (press ctrl+c to quit)")
+            self.clear()
         check_gitignore([self._disk_root])
 
         if diagnose:
@@ -270,6 +276,12 @@ class TrainBootstrap:
                 logger.info("created snapshot")
             else:
                 logger.info("snapshot is disabled in diagnose mode")
+        
+        self._latest_states:Dict[str,Any]={}
+    
+    def clear(self):
+        if os.path.exists('logs'):shutil.rmtree('logs')
+        if os.path.exists('opts'):shutil.rmtree('opts')
     
     def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
         logger.info("fixed seed set for random and torch")
@@ -348,7 +360,7 @@ class TrainBootstrap:
             }
         )
         logger.warning(f"[INFO]\n{table}")
-        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(helper.trial.params)}")
+        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self._custom_params|helper.trial.params)}")
 
     def optimize(
         self, recipe:ModuleRecipe, n_trials: int, stage:Optional[int]=None,inf_score:float=0,
@@ -373,22 +385,23 @@ class TrainBootstrap:
         self._inf_score=inf_score
         study = optuna.create_study(storage=storage_path)
         
-        # in diagnose mode, run 3 times only
+        # in diagnose mode, run 2 times only
         if self._diagnose_mode:
-            n_trials=3
-        study.optimize(lambda x: self._wrapper(x,recipe,stage_comment), n_trials=n_trials, gc_after_trial=True)
+            n_trials=2
+        study.optimize(lambda x: self._wrapper(x,recipe,self._latest_states,stage_comment), n_trials=n_trials, gc_after_trial=True)
 
         # post process
-        if not self._diagnose_mode:
-            best_params = study.best_params
-            best_value = study.best_value
-            best_trial=study.best_trial
-            logger.warning("[BOOPSTRAP] finish optimization")
-            logger.warning(
-                f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
-            )
-            logger.warning(f"[BOOTSTRAP] best score: {best_value}")
+        best_params = study.best_params
+        best_value = study.best_value
+        best_trial=study.best_trial
+        logger.warning("[BOOPSTRAP] finish optimization")
+        logger.warning(
+            f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
+        )
+        logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
+        self._latest_states|=best_trial.user_attrs['states']
+        if not self._diagnose_mode:
             best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
             target_helper=self.file.get_exp_instance(stage_comment)
             shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
@@ -398,7 +411,7 @@ class TrainBootstrap:
         
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, comment:str) -> float | Sequence[float]:
+    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, inherited_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial._trial_id}")
         self.helper = TrainHelper(
             trial,
@@ -408,8 +421,13 @@ class TrainBootstrap:
             global_params=self._custom_params,
         )
         recipe._set_helper(self.helper)
-        recipe.prepare(self.helper)
+        recipe.prepare(self.helper,inherited_states)
         self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
+        _scheduler=recipe.set_scheduler(self.helper._optimizer)
+        if _scheduler is not None:
+            self.helper._reg_scheduler(_scheduler)
+        del _scheduler
+
 
         best_score=self._inf_score
         # check diagnose mode
@@ -522,6 +540,8 @@ class TrainBootstrap:
             # early stop
             if self._enable_prune and trial.should_prune():
                 raise optuna.TrialPruned()
+        
+        trial.set_user_attr('states',recipe.end(self.helper))
         
         if self._diagnose_mode:
             # remove checkpoints and boards
