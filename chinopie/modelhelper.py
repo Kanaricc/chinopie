@@ -277,7 +277,7 @@ class TrainBootstrap:
             else:
                 logger.info("snapshot is disabled in diagnose mode")
         
-        self._latest_states:Dict[str,Any]={}
+        self._inherit_states:Dict[str,Any]={}
     
     def clear(self):
         if os.path.exists('logs'):shutil.rmtree('logs')
@@ -383,12 +383,13 @@ class TrainBootstrap:
             storage_path=f"sqlite:///{storage_path}"
         
         self._inf_score=inf_score
+        self._best_trial_score=inf_score
         study = optuna.create_study(storage=storage_path)
         
         # in diagnose mode, run 2 times only
         if self._diagnose_mode:
             n_trials=2
-        study.optimize(lambda x: self._wrapper(x,recipe,self._latest_states,stage_comment), n_trials=n_trials, gc_after_trial=True)
+        study.optimize(lambda x: self._wrapper(x,recipe,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
 
         # post process
         best_params = study.best_params
@@ -400,7 +401,6 @@ class TrainBootstrap:
         )
         logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
-        self._latest_states|=best_trial.user_attrs['states']
         if not self._diagnose_mode:
             best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
             target_helper=self.file.get_exp_instance(stage_comment)
@@ -411,7 +411,7 @@ class TrainBootstrap:
         
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, inherited_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
+    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, inherit_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial._trial_id}")
         self.helper = TrainHelper(
             trial,
@@ -421,7 +421,7 @@ class TrainBootstrap:
             global_params=self._custom_params,
         )
         recipe._set_helper(self.helper)
-        recipe.prepare(self.helper,inherited_states)
+        recipe.prepare(self.helper,inherit_states)
         self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
         _scheduler=recipe.set_scheduler(self.helper._optimizer)
         if _scheduler is not None:
@@ -541,7 +541,7 @@ class TrainBootstrap:
             if self._enable_prune and trial.should_prune():
                 raise optuna.TrialPruned()
         
-        trial.set_user_attr('states',recipe.end(self.helper))
+        self._latest_states=recipe.end(self.helper)
         
         if self._diagnose_mode:
             # remove checkpoints and boards
@@ -552,6 +552,16 @@ class TrainBootstrap:
             logger.info("removed ckpt and board")
         
         return best_score
+    
+    def _hook_trial_end(self,study: optuna.study.Study, trial: optuna.trial.FrozenTrial):
+        if trial.state==optuna.trial.TrialState.PRUNED:
+            return
+        assert trial.value is not None
+        if trial.value>=self._best_trial_score:
+            self._best_trial_score=trial.value
+            self._inherit_states=self._latest_states
+            logger.info("update inherit states")
+        del self._latest_states
     
     def _end_phase(self,epochi:int,phase:PhaseHelper):
         if not dist.is_enabled():
