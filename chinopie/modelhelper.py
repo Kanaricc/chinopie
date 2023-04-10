@@ -130,7 +130,6 @@ class TrainHelper:
             logger.debug("ddp enabled, checked distributed sampler in test set")
     
     def reg_model(self,model:nn.Module):
-        self._model=model
         self._model=model.to(self.dev)
     
     def _reg_optimizer(self,optimizer:Optimizer):
@@ -372,7 +371,8 @@ class TrainBootstrap:
         else:
             stage_comment=f"{self._comment}({stage})"
         
-        self.ifile=self.file.get_exp_instance(stage_comment)
+        self.study_file=self.file.get_exp_instance(stage_comment)
+        self.trial_files:List[InstanceFileHelper]=[]
         if not os.path.exists("opts"):
             os.mkdir("opts")
         storage_path = os.path.join("opts", f"{stage_comment}.db")
@@ -389,30 +389,37 @@ class TrainBootstrap:
         # in diagnose mode, run 2 times only
         if self._diagnose_mode:
             n_trials=2
-        study.optimize(lambda x: self._wrapper(x,recipe,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+        
+        try:
+            study.optimize(lambda x: self._wrapper(x,recipe,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
 
-        # post process
-        best_params = study.best_params
-        best_value = study.best_value
-        best_trial=study.best_trial
-        logger.warning("[BOOPSTRAP] finish optimization")
-        logger.warning(
-            f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
-        )
-        logger.warning(f"[BOOTSTRAP] best score: {best_value}")
+            # post process
+            best_params = study.best_params
+            best_value = study.best_value
+            best_trial=study.best_trial
+            logger.warning("[BOOPSTRAP] finish optimization")
+            logger.warning(
+                f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
+            )
+            logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
-        if not self._diagnose_mode:
-            best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
-            target_helper=self.file.get_exp_instance(stage_comment)
-            shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
-            shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
-            logger.info("copied best trial as the final result")
-
+            if not self._diagnose_mode:
+                best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
+                target_helper=self.file.get_exp_instance(stage_comment)
+                shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
+                shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
+                logger.info("copied best trial as the final result")
+        finally:
+            if self._diagnose_mode:
+                for file in self.trial_files:
+                    file.clear_instance()
+                logger.info("deleted trial files in diagnose mode")
         
         logger.warning("[BOOTSTRAP] good luck!")
 
     def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, inherit_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial._trial_id}")
+        self.trial_files.append(trial_file)
         self.helper = TrainHelper(
             trial,
             arg_str=self._extra_arg_str,
@@ -542,14 +549,6 @@ class TrainBootstrap:
                 raise optuna.TrialPruned()
         
         self._latest_states=recipe.end(self.helper)
-        
-        if self._diagnose_mode:
-            # remove checkpoints and boards
-            if os.path.exists(trial_file.ckpt_dir):
-                shutil.rmtree(trial_file.ckpt_dir)
-            if os.path.exists(trial_file.default_board_dir):
-                shutil.rmtree(trial_file.default_board_dir)
-            logger.info("removed ckpt and board")
         
         return best_score
     

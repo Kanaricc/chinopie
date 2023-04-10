@@ -19,6 +19,8 @@ class GlobalFileHelper:
         self.disk_root = disk_root
 
         if dist.is_main_process():
+            if not os.path.exists(self.disk_root):
+                os.mkdir(self.disk_root)
             if not os.path.exists(os.path.join(self.disk_root, DIR_CHECKPOINTS)):
                 os.mkdir(os.path.join(self.disk_root, DIR_CHECKPOINTS))
             if not os.path.exists(os.path.join(self.disk_root, DIR_TENSORBOARD)):
@@ -75,6 +77,15 @@ class InstanceFileHelper:
         #     DIR_TENSORBOARD,
         #     f"{self.comment}-{datetime.now().strftime('%Y.%m.%d.%H.%M.%S')}",
         # )
+    
+    def clear_instance(self):
+        paths=[
+            self.ckpt_dir,
+            self.default_board_dir,
+        ]
+        for path in paths:
+            if os.path.exists(path):
+                shutil.rmtree(path)
 
     def prepare_checkpoint_dir(self):
         if not os.path.exists(self.ckpt_dir):
