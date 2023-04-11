@@ -78,11 +78,12 @@ class PhaseHelper:
         batch_len = len(self._dataloader)
         one_percent_len=batch_len//25
         if dist.is_main_process():
+            logger.info("data preview can be found in log")
             with tqdm(total=batch_len,ncols=64) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._dry_run:
-                        logger.info("data preview")
-                        logger.info(data)
+                        logger.debug("data preview")
+                        logger.debug(data)
                     yield batchi, data
                     progressbar.update()
                     postfix={'loss':str(self._realtime_loss_probe)}
