@@ -232,6 +232,7 @@ class TrainBootstrap:
         checkpoint_save_period: int = 1,
         enable_snapshot=False,
         enable_prune=False,
+        seed:Optional[Any]=None,
         dev="",
         diagnose=False,
         verbose=False,
@@ -270,23 +271,35 @@ class TrainBootstrap:
         self.file=GlobalFileHelper(disk_root)
         self._custom_params:Dict[str,Any]={}
 
+        # set prune
         if self._enable_prune:
             logger.info('early stop is enabled')
+
+        # set clear
         if args.clear:
             # do clear
             input("are you sure to clear all state files and logs? (press ctrl+c to quit)")
             self.clear()
+        
+        # check git ignore
         check_gitignore([self._disk_root])
 
+        # set diagnose mode
         if diagnose:
             torch.autograd.anomaly_mode.set_detect_anomaly(True)
             logger.info("diagnose mode enabled")
+        
+        # set snapshot
         if enable_snapshot:
             if not diagnose:
                 create_snapshot(self._comment)
                 logger.info("created snapshot")
             else:
                 logger.info("snapshot is disabled in diagnose mode")
+        
+        # set fixed seed
+        if seed is not None:
+            self.set_fixed_seed(seed)
         
         self._inherit_states:Dict[str,Any]={}
     

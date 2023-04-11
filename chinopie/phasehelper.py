@@ -76,6 +76,7 @@ class PhaseHelper:
 
     def range_data(self):
         batch_len = len(self._dataloader)
+        one_percent_len=batch_len//25
         if dist.is_main_process():
             with tqdm(total=batch_len,ncols=64) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
@@ -84,7 +85,10 @@ class PhaseHelper:
                         logger.info(data)
                     yield batchi, data
                     progressbar.update()
-                    progressbar.set_postfix({'loss':self._realtime_loss_probe})
+                    postfix={'loss':str(self._realtime_loss_probe)}
+                    progressbar.set_postfix(postfix)
+                    if batchi%one_percent_len==0:
+                        logger.debug(f"progress {batchi}/{batch_len}: {postfix}")
                     if self._dry_run and batchi>=2:
                         break
         else:
