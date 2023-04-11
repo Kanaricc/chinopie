@@ -114,6 +114,10 @@ class TrainHelper:
         logger.debug("registered train and val set")
         self._set_flag('trainval_data_set')
 
+        # worker_init_fn are used in data iteration
+        self._dataloader_train.worker_init_fn=worker_init_fn
+        self._dataloader_val.worker_init_fn=worker_init_fn
+
         if dist.is_enabled():
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
             assert not isinstance(self._dataloader_val.sampler, DistributedSampler)
@@ -124,6 +128,8 @@ class TrainHelper:
         self._dataloader_test = testloader
         logger.debug("registered test set. enabled test phase.")
         self._set_flag('test_data_set')
+
+        self._dataloader_test.worker_init_fn=worker_init_fn
 
         if dist.is_enabled():
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
@@ -206,6 +212,12 @@ class TrainHelper:
                         f"[{phase._phase_name} probes] {k}: {phase.custom_probes[k].average()}"
                     )
 
+# worker seed init in different threads
+def worker_init_fn(worker_id):
+    worker_seed=torch.initial_seed()%2**32
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
 # all block sync should be done in bootstrap. all data sync should be done in helper.
 
 from .recipe import ModuleRecipe
@@ -282,17 +294,12 @@ class TrainBootstrap:
         if os.path.exists('logs'):shutil.rmtree('logs')
         if os.path.exists('opts'):shutil.rmtree('opts')
     
-    def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
-        logger.info("fixed seed set for random and torch")
-        os.environ["PYTHONHASHSEED"] = str(seed)
-        random.seed(seed)
-
-        np.random.seed(seed)
-        torch.manual_seed(seed)
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-
-        np.random.seed(seed)
+    def set_fixed_seed(self, seed: Any, ddp_seed=True):
+        if not dist.is_enabled() or not ddp_seed:
+            set_fixed_seed(seed)
+        else:
+            set_fixed_seed(seed+dist.get_rank())
+            logger.info("ddp detected, use different seed")
     
     def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
         if name not in self._custom_params:
@@ -468,6 +475,7 @@ class TrainBootstrap:
             dist.barrier()
         logger.warning("ready to train model")
         for epochi in range(self._epoch_num):
+            self._cur_epochi=epochi
             if not dist.is_enabled():
                 logger.warning(f"=== START EPOCH {epochi} ===")
             else:
@@ -481,6 +489,7 @@ class TrainBootstrap:
                 logger.info(f"[HELPER] fast pass epoch {recovered_epoch}")
                 continue
             
+            self._prepare_dataloader_for_epoch(self.helper._dataloader_train)
             phase=PhaseHelper(
                 "train",
                 self.helper._data_train,
@@ -493,6 +502,7 @@ class TrainBootstrap:
             phase._check_update()
             self._end_phase(epochi,phase)
 
+            self._prepare_dataloader_for_epoch(self.helper._dataloader_val)
             phase=PhaseHelper(
                 "val",
                 self.helper._data_val,
@@ -507,10 +517,11 @@ class TrainBootstrap:
             self._end_phase(epochi,phase)
 
             if self.helper._get_flag('test_data_set'):
+                self._prepare_dataloader_for_epoch(self.helper._dataloader_test)
                 phase=PhaseHelper(
-                    "val",
-                    self.helper._data_val,
-                    self.helper._dataloader_val,
+                    "test",
+                    self.helper._data_test,
+                    self.helper._dataloader_test,
                     dry_run=self._diagnose_mode,
                     custom_probes=self.helper._custom_probes.copy(),
                     dev=self.helper.dev
@@ -552,6 +563,10 @@ class TrainBootstrap:
         
         return best_score
     
+    def _prepare_dataloader_for_epoch(self,dataloader:DataLoader):
+        if isinstance(dataloader.sampler,DistributedSampler):
+            dataloader.sampler.set_epoch(self._cur_epochi)
+    
     def _hook_trial_end(self,study: optuna.study.Study, trial: optuna.trial.FrozenTrial):
         if trial.state==optuna.trial.TrialState.PRUNED:
             return
@@ -571,6 +586,18 @@ class TrainBootstrap:
             logger.warning(
                 f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
             )
+
+def set_fixed_seed(seed:Any):
+    logger.info("fixed seed set for random, torch, and numpy")
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    np.random.seed(seed)
 
 
 def gettype(name):
