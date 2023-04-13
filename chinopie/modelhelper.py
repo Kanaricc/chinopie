@@ -404,11 +404,11 @@ class TrainBootstrap:
         
         self._inf_score=inf_score
         self._best_trial_score=inf_score
-        study = optuna.create_study(storage=storage_path)
+        study = optuna.create_study(study_name=stage_comment,storage=storage_path)
         
-        # in diagnose mode, run 2 times only
+        # in diagnose mode, run 1 times only
         if self._diagnose_mode:
-            n_trials=2
+            n_trials=1
         
         try:
             study.optimize(lambda x: self._wrapper(x,recipe,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)

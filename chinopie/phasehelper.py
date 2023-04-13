@@ -71,10 +71,6 @@ class PhaseHelper:
         self._loss_updated = False
         self._score_updated = False
 
-        if self._dry_run:
-            self._dataloader.batch_size=2
-            logger.info("set batch size to 2 in diagnose mode")
-
     def get_data_sample(self):
         for data in self._dataloader:
             return data
@@ -83,10 +79,11 @@ class PhaseHelper:
         batch_len = len(self._dataloader)
         one_percent_len=max(1,batch_len//25)
         if dist.is_main_process():
-            with tqdm(total=batch_len,ncols=64) as progressbar:
+            if self._dry_run:
+                logger.info("data preview can be found in log")
+            with tqdm(total=batch_len,dynamic_ncols=True) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._dry_run:
-                        logger.info("data preview can be found in log")
                         torch.set_printoptions(profile='full')
                         logger.debug(data)
                         torch.set_printoptions(profile='default')

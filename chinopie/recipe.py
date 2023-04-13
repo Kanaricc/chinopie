@@ -14,7 +14,8 @@ from chinopie.modelhelper import TrainHelper,PhaseHelper
 
 
 class ModuleRecipe(ABC):
-    def __init__(self):
+    def __init__(self, clamp_grad:Optional[float]=None):
+        self._clamp_grad=clamp_grad
         pass
 
     def reg_params(self,helper:TrainHelper):
@@ -64,6 +65,7 @@ class ModuleRecipe(ABC):
     def dev(self):
         return self._helper.dev
     
+    
     def switch_train(self,model:nn.Module):
         # TODO: check consistency
         chinopie.set_train(model)
@@ -95,11 +97,13 @@ class ModuleRecipe(ABC):
         dev_data=chinopie.any_to(data,self.dev)
         output=self.forward(dev_data)
         loss=self.cal_loss(dev_data,output)
+        p.update_loss(loss.detach().cpu())
 
         self.optimizer.zero_grad()
         loss.backward()
+        if self._clamp_grad is not None:
+            torch.nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(),max_norm=self._clamp_grad)
         self.optimizer.step()
-        p.update_loss(loss.detach().cpu())
         self.update_probe(data,chinopie.any_to(output,'cpu'),p)
         self.after_iter(data,output,'train')
     
