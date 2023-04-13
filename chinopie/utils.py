@@ -106,6 +106,8 @@ def show_params_in_3cols(params:Optional[Dict[str,Any]]=None,name:Optional[List[
 def any_to(data:Any,device:Any):
     if isinstance(data,Tensor):
         return data.to(device)
+    elif isinstance(data,nn.Module):
+        return data.to(device)
     elif isinstance(data,(list,tuple)):
         if len(data)==0:return type(data)()
         return type(data)(map(lambda x:any_to(x,device),data))

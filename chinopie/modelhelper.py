@@ -27,7 +27,7 @@ from .filehelper import GlobalFileHelper,InstanceFileHelper
 from .phasehelper import (
     PhaseHelper,
 )
-from .utils import show_params_in_3cols,create_snapshot,check_gitignore
+from .utils import show_params_in_3cols,create_snapshot,check_gitignore,any_to
 
 # LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
@@ -432,13 +432,13 @@ class TrainBootstrap:
         except optuna.TrialPruned:
             pass
         except Exception as e:
-            logger.critical("uncaught exception happened, dropping this study...")
-            if storage_path is not None and os.path.exists(storage_path):
-                os.remove(storage_path)
-                logger.critical("study db dropped")
-            for file in self.trial_files:
-                file.clear_instance()
-            logger.critical("trial files dropped")
+            # logger.critical("uncaught exception happened, dropping this study...")
+            # if storage_path is not None and os.path.exists(storage_path):
+            #     os.remove(storage_path)
+            #     logger.critical("study db dropped")
+            # for file in self.trial_files:
+            #     file.clear_instance()
+            # logger.critical("trial files dropped")
             raise e
         finally:
             if self._diagnose_mode:
