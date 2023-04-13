@@ -429,6 +429,16 @@ class TrainBootstrap:
                 shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
                 shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
                 logger.info("copied best trial as the final result")
+        except optuna.TrialPruned:
+            pass
+        except Exception:
+            logger.critical("uncaught exception happened, dropping this study...")
+            if storage_path is not None and os.path.exists(storage_path):
+                os.remove(storage_path)
+                logger.critical("study db dropped")
+            for file in self.trial_files:
+                file.clear_instance()
+            logger.critical("trial files dropped")
         finally:
             if self._diagnose_mode:
                 for file in self.trial_files:
