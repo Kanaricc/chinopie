@@ -4,14 +4,13 @@ from torch.types import Number
 from collections import deque
 
 class SmoothMeanMeter:
-    def __init__(self,level1:int=5,level2:int=25,level3:int=75) -> None:
-        self._levels=[level1,level2,level3]
-        self._qs=[deque(maxlen=x) for x in self._levels]
+    def __init__(self,length:int,level1:float=0.1,level2:float=0.25,level3:float=0.5) -> None:
+        self._levels=[level1*length,level2*length,level3*length]
+        self._qs=[deque(maxlen=int(x)) for x in self._levels]
     
-    def add(self,x:float,n:int=1):
+    def add(self,x:float):
         for q in self._qs:
-            for i in range(n):
-                q.append(x)
+            q.append(x)
     
     def _sync_dist_nodes(self):
         raise NotImplemented

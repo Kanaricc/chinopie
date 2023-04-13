@@ -3,6 +3,7 @@ import inspect
 from typing import List,Dict,Any,Optional,Callable,Sequence
 from typing_extensions import Self
 
+import torch
 from torch.utils.data import DataLoader
 from torch import Tensor
 from loguru import logger
@@ -62,7 +63,7 @@ class PhaseHelper:
 
         self._score = AverageMeter("")
         self._loss_probe = AverageMeter("")
-        self._realtime_loss_probe=SmoothMeanMeter()
+        self._realtime_loss_probe=SmoothMeanMeter(len(self._dataloader))
         self._custom_probes:Dict[str,AverageMeter] = dict(
             [(x, AverageMeter(x)) for x in self._custom_probe_name]
         )
@@ -70,20 +71,25 @@ class PhaseHelper:
         self._loss_updated = False
         self._score_updated = False
 
+        if self._dry_run:
+            self._dataloader.batch_size=2
+            logger.info("set batch size to 2 in diagnose mode")
+
     def get_data_sample(self):
         for data in self._dataloader:
             return data
 
     def range_data(self):
         batch_len = len(self._dataloader)
-        one_percent_len=batch_len//25
+        one_percent_len=max(1,batch_len//25)
         if dist.is_main_process():
-            logger.info("data preview can be found in log")
             with tqdm(total=batch_len,ncols=64) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._dry_run:
-                        logger.debug("data preview")
+                        logger.info("data preview can be found in log")
+                        torch.set_printoptions(profile='full')
                         logger.debug(data)
+                        torch.set_printoptions(profile='default')
                     yield batchi, data
                     progressbar.update()
                     postfix={'loss':str(self._realtime_loss_probe)}
@@ -138,7 +144,7 @@ class PhaseHelper:
         self._loss_updated = True
         self.validate_loss(loss)
         self._loss_probe.update(loss.item(), n)
-        self._realtime_loss_probe.add(loss.item(),n)
+        self._realtime_loss_probe.add(loss.item())
 
     def end_phase(self, score: float):
         self._score_updated = True
