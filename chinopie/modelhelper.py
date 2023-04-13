@@ -431,7 +431,7 @@ class TrainBootstrap:
                 logger.info("copied best trial as the final result")
         except optuna.TrialPruned:
             pass
-        except Exception:
+        except Exception as e:
             logger.critical("uncaught exception happened, dropping this study...")
             if storage_path is not None and os.path.exists(storage_path):
                 os.remove(storage_path)
@@ -439,6 +439,7 @@ class TrainBootstrap:
             for file in self.trial_files:
                 file.clear_instance()
             logger.critical("trial files dropped")
+            raise e
         finally:
             if self._diagnose_mode:
                 for file in self.trial_files:
