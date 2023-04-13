@@ -404,7 +404,10 @@ class TrainBootstrap:
         
         self._inf_score=inf_score
         self._best_trial_score=inf_score
-        study = optuna.create_study(study_name=stage_comment,storage=storage_path)
+        study = optuna.create_study(study_name=stage_comment,storage=storage_path,load_if_exists=True)
+        for trial in study.trials:
+            if trial.state==optuna.trial.TrialState.FAIL:
+                study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
         
         # in diagnose mode, run 1 times only
         if self._diagnose_mode:
@@ -412,7 +415,6 @@ class TrainBootstrap:
         
         try:
             study.optimize(lambda x: self._wrapper(x,recipe,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
-
             # post process
             best_params = study.best_params
             best_value = study.best_value
@@ -449,7 +451,9 @@ class TrainBootstrap:
         logger.warning("[BOOTSTRAP] good luck!")
 
     def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, inherit_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
-        trial_file=self.file.get_exp_instance(f"{comment}_trial{trial._trial_id}")
+        trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
+        logger.info(f"use trial id {trial_id}")
+        trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
         self.trial_files.append(trial_file)
         self.helper = TrainHelper(
             trial,
