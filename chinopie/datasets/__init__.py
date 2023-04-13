@@ -32,7 +32,7 @@ def extract_zip(file:str,tgt:str):
             f.extractall(tgt)
     elif file.endswith('.tar'):
         with tarfile.TarFile(file,'r') as f:
-            f.extractall()
+            f.extractall(tgt)
 
 
 

@@ -7,8 +7,10 @@ from loguru import logger
 from torch import nn,Tensor
 import os
 
-def copy_model(model:nn.Module):
+def copy_model(model:nn.Module,dev=None):
     model_copy = type(model)() # get a new instance
+    if dev is not None:
+        model_copy=model_copy.to(dev)
     model_copy.load_state_dict(model.state_dict()) # copy weights and stuff
     return model_copy
 

@@ -99,3 +99,5 @@ class MultiLabelLocalDataset(MultiLabelDataset):
 
         
 from .coco2014 import COCO2014Dataset
+from .voc2012 import VOC2012Dataset
+from .voc2007 import VOC2007Dataset

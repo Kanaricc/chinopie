@@ -64,22 +64,28 @@ def prepare_voc12(root: str,ignore_difficult_label:bool=True):
     if not os.path.exists(tmp_dir):
         os.mkdir(tmp_dir)
 
-    cached_file = os.path.join(tmp_dir, "VOCtrainval_11-May-2012.tar")
-    if not os.path.exists(cached_file):
-        logger.warning(f"downloading voc12 dataset")
-        download_with_progress(DATA_URL,cached_file)
+    cached_tv_file = os.path.join(tmp_dir, "VOCtrainval_11-May-2012.tar")
+    cached_test_file = os.path.join(tmp_dir, "VOC2012test.tar")
+    if not os.path.exists(cached_tv_file):
+        logger.warning(f"downloading voc12 trainval dataset")
+        download_with_progress(DATA_URL,cached_tv_file)
+        logger.warning("done")
+    if not os.path.exists(cached_test_file):
+        logger.warning(f"downloading voc12 test dataset")
+        download_with_progress(TEST_DATA_URL,cached_test_file)
         logger.warning("done")
 
     extracted_dir = os.path.join(tmp_dir, "extracted")
     if not os.path.exists(extracted_dir):
         logger.warning(f"extracting dataset")
         os.mkdir(extracted_dir)
-        extract_zip(cached_file,extracted_dir)
+        extract_zip(cached_tv_file,extracted_dir)
+        extract_zip(cached_test_file,extracted_dir)
         logger.warning("done")
 
     vocdevkit = os.path.join(extracted_dir, "VOCdevkit", "VOC2012")
     anno_path=os.path.join(vocdevkit, "Annotations")
-    assert os.path.exists(vocdevkit)
+    assert os.path.exists(vocdevkit), f"no path {vocdevkit}"
 
     img_dir = os.path.join(root, "img")
     if not os.path.exists(img_dir):
@@ -160,7 +166,7 @@ def prepare_voc12(root: str,ignore_difficult_label:bool=True):
 
 
 class VOC2012Dataset(MultiLabelLocalDataset):
-    def __init__(self, root:str,preprocess:Any,extra_preprocess=None,phase='train',negatives_as_neg1=False) -> None:
+    def __init__(self, root:str,phase:str,preprocess:Any,extra_preprocess=None,negatives_as_neg1=False) -> None:
         assert phase in ["train","val","trainval","test"]
         prepare_voc12(root)
 
