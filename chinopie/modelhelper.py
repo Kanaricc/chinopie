@@ -447,6 +447,9 @@ class TrainBootstrap:
 
         try:
             study.optimize(lambda x: self._wrapper(x,recipe,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+        except optuna.TrialPruned:
+            pass
+        finally:
             # post process
             best_params = study.best_params
             best_value = study.best_value
@@ -462,17 +465,6 @@ class TrainBootstrap:
             shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
             shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
             logger.info("copied best trial as the final result")
-        except optuna.TrialPruned:
-            pass
-        except Exception as e:
-            # logger.critical("uncaught exception happened, dropping this study...")
-            # if storage_path is not None and os.path.exists(storage_path):
-            #     os.remove(storage_path)
-            #     logger.critical("study db dropped")
-            # for file in self.trial_files:
-            #     file.clear_instance()
-            # logger.critical("trial files dropped")
-            raise e
         
         logger.warning("[BOOTSTRAP] good luck!")
 
