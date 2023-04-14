@@ -77,7 +77,7 @@ class PhaseHelper:
 
     def range_data(self):
         batch_len = len(self._dataloader)
-        one_percent_len=max(1,batch_len//25)
+        one_percent_len=max(1,(batch_len+25-1)//25)
         if dist.is_main_process():
             if self._dry_run:
                 logger.info("data preview can be found in log")
