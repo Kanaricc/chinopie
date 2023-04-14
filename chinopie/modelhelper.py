@@ -490,6 +490,12 @@ class TrainBootstrap:
         )
         recipe._set_helper(self.helper)
         recipe.prepare(self.helper,inherit_states)
+        # set optimizer
+        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
+        _scheduler=recipe.set_scheduler(self.helper._optimizer)
+        if _scheduler is not None:
+            self.helper._reg_scheduler(_scheduler)
+        del _scheduler
 
         best_score=self._inf_score
         # check diagnose mode
@@ -509,13 +515,6 @@ class TrainBootstrap:
                 state=recipe.restore_ckpt(latest_ckpt_path)
                 recovered_epoch=state['cur_epochi']
                 best_score=state['best_score']
-        
-        # set optimizer after all prepare and ckpt load
-        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
-        _scheduler=recipe.set_scheduler(self.helper._optimizer)
-        if _scheduler is not None:
-            self.helper._reg_scheduler(_scheduler)
-        del _scheduler
         
         assert self.helper._get_flag('trainval_data_set'), "train or val set not set"
         if not self.helper._get_flag('test_data_set'):
@@ -613,6 +612,10 @@ class TrainBootstrap:
             # early stop
             if self._enable_prune and trial.should_prune():
                 raise optuna.TrialPruned()
+            
+            if self._check_instant_cmd()=='prune':
+                logger.warning("breaking epoch")
+                break
         
         self._latest_states=recipe.end(self.helper)
         
@@ -641,6 +644,20 @@ class TrainBootstrap:
             logger.warning(
                 f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
             )
+    
+    def _check_instant_cmd(self):
+        logger.debug("checking instant cmd")
+        if os.path.exists('instant_cmd'):
+            with open('instant_cmd','r') as f:
+                full_cmd=f.read().strip()
+            os.remove('instant_cmd')
+            if full_cmd=="prune":
+                logger.warning("received command 'prune', stopping current trial!")
+                return 'prune'
+            else:
+                return None
+        else:
+            return None
 
 def set_fixed_seed(seed:Any):
     logger.info("fixed seed set for random, torch, and numpy")
