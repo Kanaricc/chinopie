@@ -11,8 +11,6 @@ from chinopie import logger
 from chinopie.modelhelper import TrainHelper,PhaseHelper
 
 
-
-
 class ModuleRecipe(ABC):
     def __init__(self, clamp_grad:Optional[float]=None):
         self._clamp_grad=clamp_grad
@@ -155,6 +153,8 @@ class ModuleRecipe(ABC):
 
     def restore_ckpt(self,ckpt:str)->Dict[str,Any]:
         data=torch.load(ckpt,map_location='cpu')
+        if 'custom' in ckpt:
+            self.import_custom_state(data['custom'])
         self.model.load_state_dict(data['model'])
         self.optimizer.load_state_dict(data['optimizer'])
         if self.scheduler is not None:
@@ -172,7 +172,17 @@ class ModuleRecipe(ABC):
         }
         if self.scheduler is not None:
             data['scheduler']=self.scheduler.state_dict(),
+        custom_state=self.export_custom_state()
+        if custom_state is not None:
+            data['custom']=custom_state
         torch.save(data,ckpt)
+
+    def export_custom_state(self)->Optional[Dict[str,Any]]:
+        return None
+    
+    def import_custom_state(self,state:Dict[str,Any]):
+        ...
+
     
     def before_epoch(self):
         """

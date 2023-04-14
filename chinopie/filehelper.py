@@ -34,6 +34,8 @@ class GlobalFileHelper:
             logger.debug("found initialized ddp session")
             dist.barrier()
             logger.debug("waited for filehelper distributed initialization")
+        
+        self._instance_files:List[InstanceFileHelper]=[]
     
     def get_dataset_slot(self, dataset_id: str) -> str:
         return os.path.join(self.disk_root, DIR_DATASET, dataset_id)
@@ -46,7 +48,13 @@ class GlobalFileHelper:
         return path
     
     def get_exp_instance(self,comment:str):
-        return InstanceFileHelper(self.disk_root,comment,self)
+        t=InstanceFileHelper(self.disk_root,comment,self)
+        self._instance_files.append(t)
+        return t
+    
+    def clear_all_instance(self):
+        for x in self._instance_files:
+            x.clear_instance()
 
 class InstanceFileHelper:
     def __init__(

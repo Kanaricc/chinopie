@@ -41,12 +41,14 @@ class TrainHelper:
         trial: optuna.Trial,
         arg_str:Sequence[str],
         file_helper: InstanceFileHelper,
+        prev_file_helper:Optional[InstanceFileHelper],
         dev: str,
         global_params:Dict[str,Any],
     ) -> None:
         self.trial = trial
         self._arg_str=arg_str
         self.file=file_helper
+        self.prev_file=prev_file_helper
 
         if dist.is_enabled():
             logger.info(
@@ -161,7 +163,8 @@ class TrainHelper:
         assert name in self._global_params, f"request for unregisted param `{name}`"
         fixed_val = self._global_params[name]
         if fixed_val is not None:
-            assert fixed_val >= low and fixed_val <= high
+            if fixed_val< low or fixed_val>high:
+                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
             logger.debug(f"using fixed param `{name}`")
             return fixed_val
         else:
@@ -179,7 +182,8 @@ class TrainHelper:
         assert name in self._global_params, f"request for unregisted param `{name}`"
         fixed_val = self._global_params[name]
         if fixed_val is not None:
-            assert fixed_val >= low and fixed_val <= high
+            if fixed_val< low or fixed_val>high:
+                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
             logger.debug(f"using fixed param `{name}`")
             return fixed_val
         else:
@@ -303,6 +307,11 @@ class TrainBootstrap:
         
         self._inherit_states:Dict[str,Any]={}
     
+    def release(self):
+        if self._diagnose_mode:
+            self.file.clear_all_instance()
+            logger.info("deleted trial files in diagnose mode")
+    
     def clear(self):
         if os.path.exists('logs'):shutil.rmtree('logs')
         if os.path.exists('opts'):shutil.rmtree('opts')
@@ -390,9 +399,14 @@ class TrainBootstrap:
             stage_comment=self._comment
         else:
             stage_comment=f"{self._comment}({stage})"
-        
+        # find previous file helper
+        if stage and stage>0:
+            prev_file_helper=self.file.get_exp_instance(f"{self._comment}({stage-1})")
+            logger.debug("found previous file helper")
+        else:
+            prev_file_helper=None
+
         self.study_file=self.file.get_exp_instance(stage_comment)
-        self.trial_files:List[InstanceFileHelper]=[]
         if not os.path.exists("opts"):
             os.mkdir("opts")
         storage_path = os.path.join("opts", f"{stage_comment}.db")
@@ -405,16 +419,34 @@ class TrainBootstrap:
         self._inf_score=inf_score
         self._best_trial_score=inf_score
         study = optuna.create_study(study_name=stage_comment,storage=storage_path,load_if_exists=True)
+
+        finished_trials=set()
         for trial in study.trials:
             if trial.state==optuna.trial.TrialState.FAIL:
+                logger.info(f"found failed trial {trial._trial_id}, resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+            elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
+                if 'trial_id' not in trial.user_attrs:
+                    finished_trials.add(trial._trial_id)
+                else:
+                    finished_trials.add(trial.user_attrs['trial_id'])
+        logger.debug(f"found finished trials {finished_trials}. the requested #trials is {n_trials}")
+        if len(finished_trials)==n_trials:
+            logger.warning(f"this study is already finished")
+            logger.warning(
+                f"best hyperparameters\n{show_params_in_3cols(study.best_params)}"
+            )
+            logger.warning(f"best score: {study.best_value}")
+            return
         
         # in diagnose mode, run 1 times only
         if self._diagnose_mode:
             n_trials=1
+
         
+
         try:
-            study.optimize(lambda x: self._wrapper(x,recipe,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+            study.optimize(lambda x: self._wrapper(x,recipe,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
             # post process
             best_params = study.best_params
             best_value = study.best_value
@@ -425,12 +457,11 @@ class TrainBootstrap:
             )
             logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
-            if not self._diagnose_mode:
-                best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
-                target_helper=self.file.get_exp_instance(stage_comment)
-                shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
-                shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
-                logger.info("copied best trial as the final result")
+            best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
+            target_helper=self.file.get_exp_instance(stage_comment)
+            shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
+            shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
+            logger.info("copied best trial as the final result")
         except optuna.TrialPruned:
             pass
         except Exception as e:
@@ -442,34 +473,23 @@ class TrainBootstrap:
             #     file.clear_instance()
             # logger.critical("trial files dropped")
             raise e
-        finally:
-            if self._diagnose_mode:
-                for file in self.trial_files:
-                    file.clear_instance()
-                logger.info("deleted trial files in diagnose mode")
         
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, inherit_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
+    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
-        logger.info(f"use trial id {trial_id}")
+        logger.info(f"this is trial {trial._trial_id}, real id {trial_id}")
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
-        self.trial_files.append(trial_file)
         self.helper = TrainHelper(
             trial,
             arg_str=self._extra_arg_str,
             file_helper=trial_file,
+            prev_file_helper=prev_file_helper,
             dev=self._dev,
             global_params=self._custom_params,
         )
         recipe._set_helper(self.helper)
         recipe.prepare(self.helper,inherit_states)
-        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
-        _scheduler=recipe.set_scheduler(self.helper._optimizer)
-        if _scheduler is not None:
-            self.helper._reg_scheduler(_scheduler)
-        del _scheduler
-
 
         best_score=self._inf_score
         # check diagnose mode
@@ -489,6 +509,13 @@ class TrainBootstrap:
                 state=recipe.restore_ckpt(latest_ckpt_path)
                 recovered_epoch=state['cur_epochi']
                 best_score=state['best_score']
+        
+        # set optimizer after all prepare and ckpt load
+        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
+        _scheduler=recipe.set_scheduler(self.helper._optimizer)
+        if _scheduler is not None:
+            self.helper._reg_scheduler(_scheduler)
+        del _scheduler
         
         assert self.helper._get_flag('trainval_data_set'), "train or val set not set"
         if not self.helper._get_flag('test_data_set'):
