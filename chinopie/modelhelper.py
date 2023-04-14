@@ -544,7 +544,7 @@ class TrainBootstrap:
                 continue
             
             self._prepare_dataloader_for_epoch(self.helper._dataloader_train)
-            phase=PhaseHelper(
+            phase_train=PhaseHelper(
                 "train",
                 self.helper._data_train,
                 self.helper._dataloader_train,
@@ -552,12 +552,12 @@ class TrainBootstrap:
                 custom_probes=self.helper._custom_probes.copy(),
                 dev=self.helper.dev
             )
-            recipe.run_train_phase(phase)
-            phase._check_update()
-            self._end_phase(epochi,phase)
+            recipe.run_train_phase(phase_train)
+            phase_train._check_update()
+            self._end_phase(epochi,phase_train)
 
             self._prepare_dataloader_for_epoch(self.helper._dataloader_val)
-            phase=PhaseHelper(
+            phase_val=PhaseHelper(
                 "val",
                 self.helper._data_val,
                 self.helper._dataloader_val,
@@ -565,14 +565,14 @@ class TrainBootstrap:
                 custom_probes=self.helper._custom_probes.copy(),
                 dev=self.helper.dev
             )
-            recipe.run_val_phase(phase)
-            phase._check_update()
-            score=phase.score
-            self._end_phase(epochi,phase)
+            recipe.run_val_phase(phase_val)
+            phase_val._check_update()
+            score=phase_val.score
+            self._end_phase(epochi,phase_val)
 
             if self.helper._get_flag('test_data_set'):
                 self._prepare_dataloader_for_epoch(self.helper._dataloader_test)
-                phase=PhaseHelper(
+                phase_test=PhaseHelper(
                     "test",
                     self.helper._data_test,
                     self.helper._dataloader_test,
@@ -580,12 +580,33 @@ class TrainBootstrap:
                     custom_probes=self.helper._custom_probes.copy(),
                     dev=self.helper.dev
                 )
-                recipe.run_train_phase(phase)
-                phase._check_update()
-                score=phase.score
-                self._end_phase(epochi,phase)
+                recipe.run_train_phase(phase_test)
+                phase_test._check_update()
+                score=phase_test.score
+                self._end_phase(epochi,phase_test)
+            else: phase_test=None
             recipe.after_epoch()
             assert type(score)==float
+
+            # output final result of this epoch
+            loss_msg=[
+                phase_train.loss_probe.average(),
+                phase_val.loss_probe.average(),
+                phase_test.loss_probe.average() if phase_test else 0
+            ]
+            score_msg=[
+                phase_train.score,
+                phase_val.score,
+                phase_test.score if phase_test else 0
+            ]
+            if not dist.is_enabled():
+                logger.warning(
+                    f"=== END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
+                )
+            else:
+                logger.warning(
+                    f"=== RANK {dist.get_rank()} END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
+                )
 
             # check if ckpt is need
             need_save_period = epochi % self._checkpoint_save_period == 0
