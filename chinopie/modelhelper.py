@@ -391,7 +391,7 @@ class TrainBootstrap:
         logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self._custom_params|helper.trial.params)}")
 
     def optimize(
-        self, recipe:ModuleRecipe, n_trials: int, stage:Optional[int]=None,inf_score:float=0,
+        self, recipe:ModuleRecipe,direction:str, n_trials: int, stage:Optional[int]=None,inf_score:float=0,
     ):
         self._flush_params()
                 
@@ -418,7 +418,7 @@ class TrainBootstrap:
         
         self._inf_score=inf_score
         self._best_trial_score=inf_score
-        study = optuna.create_study(study_name=stage_comment,storage=storage_path,load_if_exists=True)
+        study = optuna.create_study(study_name=stage_comment,direction=direction,storage=storage_path,load_if_exists=True)
 
         finished_trials=set()
         for trial in study.trials:
