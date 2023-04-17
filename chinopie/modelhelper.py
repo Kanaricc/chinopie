@@ -1,5 +1,5 @@
 from datetime import datetime
-import os, sys, shutil
+import os, sys, shutil,pdb
 import argparse
 import random
 import inspect
@@ -418,7 +418,7 @@ class TrainBootstrap:
         
         self._inf_score=inf_score
         self._best_trial_score=inf_score
-        study = optuna.create_study(study_name=stage_comment,direction=direction,storage=storage_path,load_if_exists=True)
+        study = optuna.create_study(study_name='deadbeef',direction=direction,storage=storage_path,load_if_exists=True)
 
         finished_trials=set()
         for trial in study.trials:
@@ -626,9 +626,13 @@ class TrainBootstrap:
             if self._enable_prune and trial.should_prune():
                 raise optuna.TrialPruned()
             
-            if self._check_instant_cmd()=='prune':
+            instant_cmd=self._check_instant_cmd()
+
+            if instant_cmd=='prune':
                 logger.warning("breaking epoch")
                 break
+            elif instant_cmd=='pdb':
+                pdb.set_trace()
         
         self._latest_states=recipe.end(self.helper)
         
@@ -650,11 +654,14 @@ class TrainBootstrap:
     
     def _end_phase(self,epochi:int,phase:PhaseHelper):
         if not dist.is_enabled():
-            logger.warning(
+            for k,v in phase.custom_probes.items():
+                logger.info(f"|| {k}: {v.average()}")
+
+            logger.info(
                 f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
             )
         else:
-            logger.warning(
+            logger.info(
                 f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
             )
     
@@ -667,7 +674,11 @@ class TrainBootstrap:
             if full_cmd=="prune":
                 logger.warning("received command 'prune', stopping current trial!")
                 return 'prune'
+            elif full_cmd=='pdb':
+                logger.warning("received command 'pdb', entering pdb!")
+                return 'pdb'
             else:
+                logger.warning(f"unknown command '{full_cmd}'")
                 return None
         else:
             return None
