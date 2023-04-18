@@ -118,3 +118,8 @@ def any_to(data:Any,device:Any):
         return res
     else:
         return data
+
+def get_env(name:str):
+    res=os.environ.get(name)
+    assert res is not None, f"enviroment variable `{name}` required"
+    return res

@@ -434,7 +434,7 @@ class TrainBootstrap:
         if len(finished_trials)==n_trials:
             logger.warning(f"this study is already finished")
             logger.warning(
-                f"best hyperparameters\n{show_params_in_3cols(study.best_params)}"
+                f"best hyperparameters\n{show_params_in_3cols(self._custom_params|study.best_params)}"
             )
             logger.warning(f"best score: {study.best_value}")
             return
