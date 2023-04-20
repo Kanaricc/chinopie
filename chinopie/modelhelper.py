@@ -454,7 +454,7 @@ class TrainBootstrap:
             best_params = study.best_params
             best_value = study.best_value
             best_trial=study.best_trial
-            logger.warning("[BOOPSTRAP] finish optimization")
+            logger.warning(f"[BOOPSTRAP] finish optimization of stage `{stage_comment}`")
             logger.warning(
                 f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
             )
