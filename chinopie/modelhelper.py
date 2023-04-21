@@ -484,7 +484,7 @@ class TrainBootstrap:
         recipe.prepare(self.helper,inherit_states)
         # set optimizer
         self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
-        _scheduler=recipe.set_scheduler(self.helper._optimizer)
+        _scheduler=recipe.set_scheduler(self.helper._optimizer,self.helper)
         if _scheduler is not None:
             self.helper._reg_scheduler(_scheduler)
         del _scheduler

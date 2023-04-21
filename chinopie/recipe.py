@@ -36,8 +36,8 @@ class ModuleRecipe(ABC):
     def set_optimizers(self,model,helper:TrainHelper)->Optimizer:
         ...
 
-    def set_scheduler(self,optimizer:Optimizer)->Optional[LRScheduler]:
-        logger.info(f"no scheduler set for optimizer `{optimizer}`")
+    def set_scheduler(self,optimizer:Optimizer,helper:TrainHelper)->Optional[LRScheduler]:
+        logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
         return None
     
     # TODO: this should be removed
