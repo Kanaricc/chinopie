@@ -1,3 +1,4 @@
+import torch
 from typing import Dict,Any,Optional,List
 from prettytable import PrettyTable,PLAIN_COLUMNS
 from datetime import datetime
@@ -105,8 +106,13 @@ def show_params_in_3cols(params:Optional[Dict[str,Any]]=None,name:Optional[List[
 
 def any_to(data:Any,device:Any):
     if isinstance(data,Tensor):
+        # type fix for mps backend
+        if device=='mps' and data.dtype==torch.float:
+            data=data.to(torch.float32)
         return data.to(device)
     elif isinstance(data,nn.Module):
+        if device=='mps' and data.dtype==torch.float:
+            data=data.to(torch.float32)
         return data.to(device)
     elif isinstance(data,(list,tuple)):
         if len(data)==0:return type(data)()
