@@ -391,7 +391,7 @@ class TrainBootstrap:
         logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self._custom_params|helper.trial.params)}")
 
     def optimize(
-        self, recipe:ModuleRecipe,direction:str, n_trials: int, stage:Optional[int]=None,inf_score:float=0,
+        self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int, stage:Optional[int]=None,
     ):
         self._flush_params()
                 
@@ -418,6 +418,8 @@ class TrainBootstrap:
         
         self._inf_score=inf_score
         self._best_trial_score=inf_score
+        self._direction=direction
+        assert direction in ['maximize','minimize'], f"direction must be whether `maximize` or `minimize`, but `{direction}`"
         study = optuna.create_study(study_name='deadbeef',direction=direction,storage=storage_path,load_if_exists=True)
 
         finished_trials=set()
@@ -602,7 +604,8 @@ class TrainBootstrap:
 
             # check if ckpt is need
             need_save_period = epochi % self._checkpoint_save_period == 0
-            if score >= best_score:
+            
+            if (self._direction=='maximize' and score >= best_score) or (self._direction=='minimize' and score <=best_score):
                 best_score=score
                 need_save_best=True
             else:
