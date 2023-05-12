@@ -107,11 +107,11 @@ def show_params_in_3cols(params:Optional[Dict[str,Any]]=None,name:Optional[List[
 def any_to(data:Any,device:Any):
     if isinstance(data,Tensor):
         # type fix for mps backend
-        if device=='mps' and data.dtype==torch.float:
+        if device=='mps' and data.dtype==torch.float64:
             data=data.to(torch.float32)
         return data.to(device)
     elif isinstance(data,nn.Module):
-        if device=='mps' and data.dtype==torch.float:
+        if device=='mps' and data.dtype==torch.float64:
             data=data.to(torch.float32)
         return data.to(device)
     elif isinstance(data,(list,tuple)):
