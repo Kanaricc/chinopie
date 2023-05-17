@@ -3,7 +3,7 @@ import os, sys, shutil,pdb
 import argparse
 import random
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Sequence
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 
 
 import torch
@@ -470,7 +470,7 @@ class TrainBootstrap:
         
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> float | Sequence[float]:
+    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
         logger.info(f"this is trial {trial._trial_id}, real id {trial_id}")
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
