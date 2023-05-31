@@ -424,8 +424,12 @@ class TrainBootstrap:
 
         finished_trials=set()
         for trial in study.trials:
+            # if previously we have failed trials, resuming it with correct id
             if trial.state==optuna.trial.TrialState.FAIL:
                 logger.info(f"found failed trial {trial._trial_id}, resuming")
+                study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+            elif trial.user_attrs['num_epochs']<self._epoch_num:
+                logger.info(f"found unfinished trial {trial._trial_id}, resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
             elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
                 if 'trial_id' not in trial.user_attrs:
@@ -471,7 +475,11 @@ class TrainBootstrap:
         logger.warning("[BOOTSTRAP] good luck!")
 
     def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
+        # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
+        trial.user_attrs['trial_id']=trial_id
+        trial.user_attrs['num_epochs']=self._epoch_num
+
         logger.info(f"this is trial {trial._trial_id}, real id {trial_id}")
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
         self.helper = TrainHelper(
