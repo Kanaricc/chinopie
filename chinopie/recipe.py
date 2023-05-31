@@ -8,7 +8,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 import chinopie
 from chinopie import logger
-from chinopie.modelhelper import TrainHelper,PhaseHelper
+from chinopie.modelhelper import TrainHelper,PhaseHelper,HyperparameterManager
 
 
 class ModuleRecipe(ABC):
@@ -16,13 +16,8 @@ class ModuleRecipe(ABC):
         self._clamp_grad=clamp_grad
         pass
 
-    def reg_params(self,helper:TrainHelper):
-        """
-        register hyperparameters here
-        """
-        pass
 
-    def prepare(self,helper:TrainHelper,inherited_states:Dict[str,Any]):
+    def prepare(self,hp_manager:HyperparameterManager,helper:TrainHelper,inherited_states:Dict[str,Any]):
         """
         prepare models and probes here
         """
@@ -33,10 +28,10 @@ class ModuleRecipe(ABC):
         return {}
 
     @abstractmethod
-    def set_optimizers(self,model,helper:TrainHelper)->Optimizer:
+    def set_optimizers(self,model,hp_manager:HyperparameterManager,helper:TrainHelper)->Optimizer:
         ...
 
-    def set_scheduler(self,optimizer:Optimizer,helper:TrainHelper)->Optional[LRScheduler]:
+    def set_scheduler(self,optimizer:Optimizer,hp_manager:HyperparameterManager,helper:TrainHelper)->Optional[LRScheduler]:
         logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
         return None
     

@@ -1,12 +1,27 @@
-import torch
-from typing import Dict,Any,Optional,List
-from prettytable import PrettyTable,PLAIN_COLUMNS
+import random
+import os
 from datetime import datetime
 from typing import Optional
+from typing import Dict,Any,Optional,List
+
+import numpy as np
+import torch
+from prettytable import PrettyTable,PLAIN_COLUMNS
 from git.repo import Repo
 from loguru import logger
 from torch import nn,Tensor
-import os
+
+def set_fixed_seed(seed:Any):
+    logger.info("fixed seed set for random, torch, and numpy")
+    os.environ["PYTHONHASHSEED"] = str(seed)
+    random.seed(seed)
+
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+    np.random.seed(seed)
 
 def copy_model(model:nn.Module,dev=None):
     model_copy = type(model)() # get a new instance

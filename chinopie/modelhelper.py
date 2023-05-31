@@ -27,10 +27,101 @@ from .filehelper import GlobalFileHelper,InstanceFileHelper
 from .phasehelper import (
     PhaseHelper,
 )
-from .utils import show_params_in_3cols,create_snapshot,check_gitignore,any_to
+from .utils import show_params_in_3cols,create_snapshot,check_gitignore,set_fixed_seed
 
 # LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
 LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+
+class HyperparameterManager:
+    def __init__(self) -> None:
+        self._param_config:Dict[str,Optional[Any]]={}
+        self._arg_parser=argparse.ArgumentParser()
+
+        self._fixed=False
+    
+    def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
+        assert self._fixed==False, "cannot reg new parameter after fixed"
+        if name not in self._param_config:
+            self._arg_parser.add_argument(f"--{name}",required=False)
+            self._param_config[name] = value
+
+    def reg_int(self, name: str, value: Optional[int] = None):
+        assert self._fixed==False, "cannot reg new parameter after fixed"
+        if name not in self._param_config:
+            self._arg_parser.add_argument(f"--{name}",type=int,required=False)
+            self._param_config[name] = value
+
+    def reg_float(self, name: str, value: Optional[float] = None):
+        assert self._fixed==False, "cannot reg new parameter after fixed"
+        if name not in self._param_config:
+            self._arg_parser.add_argument(f"--{name}",type=float,required=False)
+            self._param_config[name] = value
+    
+    def parse_args(self,raw_args:List[str]):
+        args=self.arg_parser.parse_args(raw_args)
+        logger.debug(f"hyperparameters in argparser: {args}")
+        for k in self._param_config.keys():
+            if getattr(args,k) is not None:
+                self._param_config[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
+    
+    def _set_trial(self,trial:optuna.Trial):
+        self._trial=trial
+        self._fixed=True
+        
+    
+    def suggest_category(
+        self, name: str, choices: Sequence[CategoricalChoiceType]
+    ) -> CategoricalChoiceType:
+        assert name in self._param_config, f"request for unregisted param `{name}`"
+        fixed_val = self._param_config[name]
+        if fixed_val is not None:
+            assert fixed_val in choices
+            logger.debug(f"using fixed param `{name}`")
+            return fixed_val
+        else:
+            logger.debug(f"suggesting dynamic param `{name}`")
+            return self._trial.suggest_categorical(name, choices)
+
+    def suggest_int(self, name: str, low: int, high: int, step=1, log=False) -> int:
+        assert name in self._param_config, f"request for unregisted param `{name}`"
+        fixed_val = self._param_config[name]
+        if fixed_val is not None:
+            if fixed_val< low or fixed_val>high:
+                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
+            logger.debug(f"using fixed param `{name}`")
+            return fixed_val
+        else:
+            logger.debug(f"suggesting dynamic param `{name}`")
+            return self._trial.suggest_int(name, low, high, step, log)
+
+    def suggest_float(
+        self,
+        name: str,
+        low: float,
+        high: float,
+        step: Optional[float] = None,
+        log=False,
+    ) -> float:
+        assert name in self._param_config, f"request for unregisted param `{name}`"
+        fixed_val = self._param_config[name]
+        if fixed_val is not None:
+            if fixed_val< low or fixed_val>high:
+                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
+            logger.debug(f"using fixed param `{name}`")
+            return fixed_val
+        else:
+            logger.debug(f"suggesting dynamic param `{name}`")
+            return self._trial.suggest_float(name, low, high, step=step, log=log)
+    
+    @property
+    def arg_parser(self):
+        return self._arg_parser
+    
+    @property
+    def params(self):
+        return self._param_config
+    
 
 
 # TrainHelper has no state
@@ -43,7 +134,6 @@ class TrainHelper:
         file_helper: InstanceFileHelper,
         prev_file_helper:Optional[InstanceFileHelper],
         dev: str,
-        global_params:Dict[str,Any],
     ) -> None:
         self.trial = trial
         self._arg_str=arg_str
@@ -92,7 +182,6 @@ class TrainHelper:
                 logger.info(f"use custom device `{dev}`")
 
         self._custom_probes = []
-        self._global_params=global_params
         self._flags={}
     
     def _set_flag(self,key:str,val:Any=True):
@@ -104,7 +193,6 @@ class TrainHelper:
     def register_probe(self, name: str):
         self._custom_probes.append(name)
         logger.debug(f"register probe `{name}`")
-
 
     def register_dataset(
         self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
@@ -145,50 +233,6 @@ class TrainHelper:
     
     def _reg_scheduler(self,scheduler:LRScheduler):
         self._scheduler=scheduler
-
-    def suggest_category(
-        self, name: str, choices: Sequence[CategoricalChoiceType]
-    ) -> CategoricalChoiceType:
-        assert name in self._global_params, f"request for unregisted param `{name}`"
-        fixed_val = self._global_params[name]
-        if fixed_val is not None:
-            assert fixed_val in choices
-            logger.debug(f"using fixed param `{name}`")
-            return fixed_val
-        else:
-            logger.debug(f"suggesting dynamic param `{name}`")
-            return self.trial.suggest_categorical(name, choices)
-
-    def suggest_int(self, name: str, low: int, high: int, step=1, log=False) -> int:
-        assert name in self._global_params, f"request for unregisted param `{name}`"
-        fixed_val = self._global_params[name]
-        if fixed_val is not None:
-            if fixed_val< low or fixed_val>high:
-                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
-            logger.debug(f"using fixed param `{name}`")
-            return fixed_val
-        else:
-            logger.debug(f"suggesting dynamic param `{name}`")
-            return self.trial.suggest_int(name, low, high, step, log)
-
-    def suggest_float(
-        self,
-        name: str,
-        low: float,
-        high: float,
-        step: Optional[float] = None,
-        log=False,
-    ) -> float:
-        assert name in self._global_params, f"request for unregisted param `{name}`"
-        fixed_val = self._global_params[name]
-        if fixed_val is not None:
-            if fixed_val< low or fixed_val>high:
-                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
-            logger.debug(f"using fixed param `{name}`")
-            return fixed_val
-        else:
-            logger.debug(f"suggesting dynamic param `{name}`")
-            return self.trial.suggest_float(name, low, high, step=step, log=log)
     
     def update_tb(self, epochi:int, phase: PhaseHelper, tbwriter:SummaryWriter):
         assert phase._phase_name in ["train", "val", "test"]
@@ -254,8 +298,6 @@ class TrainBootstrap:
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
         argparser.add_argument('--clear',action='store_true',default=verbose)
         args,self._extra_arg_str=argparser.parse_known_args()
-        self._argparser=argparse.ArgumentParser()
-        
 
         self._disk_root = args.disk_root
         self._epoch_num = args.epoch_num
@@ -273,7 +315,6 @@ class TrainBootstrap:
         self._init_logger(args.verbose)
 
         self.file=GlobalFileHelper(disk_root)
-        self._custom_params:Dict[str,Any]={}
 
         # set prune
         if self._enable_prune:
@@ -305,7 +346,14 @@ class TrainBootstrap:
         if seed is not None:
             self.set_fixed_seed(seed)
         
+        # prepare hyperparameter manager
+        self._hp_manager=HyperparameterManager()
+        
         self._inherit_states:Dict[str,Any]={}
+    
+    @property
+    def hp(self):
+        return self._hp_manager
     
     def release(self):
         if self._diagnose_mode:
@@ -323,28 +371,8 @@ class TrainBootstrap:
             set_fixed_seed(seed+dist.get_rank())
             logger.info("ddp detected, use different seed")
     
-    def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
-        if name not in self._custom_params:
-            self._argparser.add_argument(f"--{name}",required=False)
-            self._custom_params[name] = value
-
-    def reg_int(self, name: str, value: Optional[int] = None):
-        if name not in self._custom_params:
-            self._argparser.add_argument(f"--{name}",type=int,required=False)
-            self._custom_params[name] = value
-
-    def reg_float(self, name: str, value: Optional[float] = None):
-        if name not in self._custom_params:
-            self._argparser.add_argument(f"--{name}",type=float,required=False)
-            self._custom_params[name] = value
-    
     def _flush_params(self):
-        args=self._argparser.parse_args(self._extra_arg_str)
-        logger.debug(f"hyperparameters in argparser: {args}")
-        for k in self._custom_params.keys():
-            if getattr(args,k) is not None:
-                self._custom_params[k]=getattr(args,k)
-                logger.debug(f"flushed `{k}`")
+        self._hp_manager.parse_args(self._extra_arg_str)
         
 
     def _init_ddp(self):
@@ -388,17 +416,21 @@ class TrainBootstrap:
             }
         )
         logger.warning(f"[INFO]\n{table}")
-        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self._custom_params|helper.trial.params)}")
+        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
+    
+    def _get_comment(self,stage:Optional[int]=None):
+        if stage is None:
+            stage_comment=self._comment
+        else:
+            stage_comment=f"{self._comment}({stage})"
+        return stage_comment
 
     def optimize(
         self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int, stage:Optional[int]=None,
     ):
         self._flush_params()
                 
-        if stage is None:
-            stage_comment=self._comment
-        else:
-            stage_comment=f"{self._comment}({stage})"
+        stage_comment=self._get_comment(stage)
         # find previous file helper
         if stage and stage>0:
             prev_file_helper=self.file.get_exp_instance(f"{self._comment}({stage-1})")
@@ -440,7 +472,7 @@ class TrainBootstrap:
         if len(finished_trials)==n_trials:
             logger.warning(f"this study is already finished")
             logger.warning(
-                f"best hyperparameters\n{show_params_in_3cols(self._custom_params|study.best_params)}"
+                f"best hyperparameters\n{show_params_in_3cols(study.best_trial.user_attrs['params'])}"
             )
             logger.warning(f"best score: {study.best_value}")
             return
@@ -448,18 +480,17 @@ class TrainBootstrap:
         # in diagnose mode, run 1 times only
         if self._diagnose_mode:
             n_trials=1
-
         
 
         try:
-            study.optimize(lambda x: self._wrapper(x,recipe,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+            study.optimize(lambda x: self._wrapper_train(x,recipe,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
         except optuna.TrialPruned:
             pass
         finally:
             # post process
-            best_params = study.best_params
-            best_value = study.best_value
             best_trial=study.best_trial
+            best_params = best_trial.user_attrs['params']
+            best_value = study.best_value
             logger.warning(f"[BOOPSTRAP] finish optimization of stage `{stage_comment}`")
             logger.warning(
                 f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
@@ -474,7 +505,7 @@ class TrainBootstrap:
         
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
+    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
         # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
         trial.user_attrs['trial_id']=trial_id
@@ -488,13 +519,12 @@ class TrainBootstrap:
             file_helper=trial_file,
             prev_file_helper=prev_file_helper,
             dev=self._dev,
-            global_params=self._custom_params,
         )
         recipe._set_helper(self.helper)
-        recipe.prepare(self.helper,inherit_states)
+        recipe.prepare(self._hp_manager,self.helper,inherit_states)
         # set optimizer
-        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self.helper))
-        _scheduler=recipe.set_scheduler(self.helper._optimizer,self.helper)
+        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self._hp_manager,self.helper))
+        _scheduler=recipe.set_scheduler(self.helper._optimizer,self._hp_manager,self.helper)
         if _scheduler is not None:
             self.helper._reg_scheduler(_scheduler)
         del _scheduler
@@ -527,6 +557,9 @@ class TrainBootstrap:
         # create board dir before training
         tbwriter = SummaryWriter(trial_file.default_board_dir)
         self._report_info(helper=self.helper,board_dir=tbwriter.log_dir)
+        # append all params (suggested and fixed) into attrs
+        trial.user_attrs['params']=self._hp_manager.params
+
         if dist.is_enabled():
             dist.barrier()
         logger.warning("ready to train model")
@@ -690,18 +723,13 @@ class TrainBootstrap:
                 return None
         else:
             return None
+    
+    def test(self,stage:Optional[int]=None):
+        stage_comment=self._get_comment(stage)
+        best_file=self.file.get_exp_instance(stage_comment)
+        raise NotImplementedError()
 
-def set_fixed_seed(seed:Any):
-    logger.info("fixed seed set for random, torch, and numpy")
-    os.environ["PYTHONHASHSEED"] = str(seed)
-    random.seed(seed)
 
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed(seed)
-        torch.cuda.manual_seed_all(seed)
-
-    np.random.seed(seed)
 
 
 def gettype(name):
