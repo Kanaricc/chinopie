@@ -81,7 +81,8 @@ class HyperparameterManager:
             return fixed_val
         else:
             logger.debug(f"suggesting dynamic param `{name}`")
-            return self._trial.suggest_categorical(name, choices)
+            self._param_config[name] = self._trial.suggest_categorical(name, choices)
+            return self._param_config[name]
 
     def suggest_int(self, name: str, low: int, high: int, step=1, log=False) -> int:
         assert name in self._param_config, f"request for unregisted param `{name}`"
@@ -93,7 +94,8 @@ class HyperparameterManager:
             return fixed_val
         else:
             logger.debug(f"suggesting dynamic param `{name}`")
-            return self._trial.suggest_int(name, low, high, step, log)
+            self._param_config[name] =  self._trial.suggest_int(name, low, high, step, log)
+            return self._param_config[name] # type: ignore
 
     def suggest_float(
         self,
@@ -112,7 +114,8 @@ class HyperparameterManager:
             return fixed_val
         else:
             logger.debug(f"suggesting dynamic param `{name}`")
-            return self._trial.suggest_float(name, low, high, step=step, log=log)
+            self._param_config[name] =  self._trial.suggest_float(name, low, high, step=step, log=log)
+            return self._param_config[name] # type: ignore
     
     @property
     def arg_parser(self):
@@ -506,6 +509,7 @@ class TrainBootstrap:
         logger.warning("[BOOTSTRAP] good luck!")
 
     def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
+        self._hp_manager._set_trial(trial)
         # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
         trial.user_attrs['trial_id']=trial_id
