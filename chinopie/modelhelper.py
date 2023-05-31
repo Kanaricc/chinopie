@@ -638,11 +638,11 @@ class TrainBootstrap:
                 raise optuna.TrialPruned()
             
             instant_cmd=self._check_instant_cmd()
-
             if instant_cmd=='prune':
                 logger.warning("breaking epoch")
                 break
             elif instant_cmd=='pdb':
+                logger.warning("entering pdb")
                 pdb.set_trace()
         
         self._latest_states=recipe.end(self.helper)
@@ -682,12 +682,9 @@ class TrainBootstrap:
             with open('instant_cmd','r') as f:
                 full_cmd=f.read().strip()
             os.remove('instant_cmd')
-            if full_cmd=="prune":
-                logger.warning("received command 'prune', stopping current trial!")
-                return 'prune'
-            elif full_cmd=='pdb':
-                logger.warning("received command 'pdb', entering pdb!")
-                return 'pdb'
+            if full_cmd in ['prune','pdb']:
+                logger.warning(f"received command `{full_cmd}`")
+                return full_cmd
             else:
                 logger.warning(f"unknown command '{full_cmd}'")
                 return None
