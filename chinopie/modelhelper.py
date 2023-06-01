@@ -65,6 +65,9 @@ class HyperparameterManager:
                 self._param_config[k]=getattr(args,k)
                 logger.debug(f"flushed `{k}`")
     
+    def load_params(self,val:Dict[str,Any]):
+        self._param_config|=val
+    
     def _set_trial(self,trial:optuna.Trial):
         self._trial=trial
         self._fixed=True
@@ -125,21 +128,16 @@ class HyperparameterManager:
     def params(self):
         return self._param_config
     
+    
 
-
-# TrainHelper has no state
-
-class TrainHelper:
+# ModelStaff has no state
+class ModelStaff:
     def __init__(
         self,
-        trial: optuna.Trial,
-        arg_str:Sequence[str],
         file_helper: InstanceFileHelper,
         prev_file_helper:Optional[InstanceFileHelper],
         dev: str,
     ) -> None:
-        self.trial = trial
-        self._arg_str=arg_str
         self.file=file_helper
         self.prev_file=prev_file_helper
 
@@ -404,7 +402,7 @@ class TrainBootstrap:
             logger.add(f"logs/log_{self._comment}.log",level=file_level, format=LOGGER_FORMAT)
         logger.info("initialized logger")
     
-    def _report_info(self,helper:TrainHelper,board_dir:str):
+    def _report_info(self,helper:ModelStaff,board_dir:str):
         dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
         table = show_params_in_3cols(
             params={
@@ -427,6 +425,9 @@ class TrainBootstrap:
         else:
             stage_comment=f"{self._comment}({stage})"
         return stage_comment
+    
+    def _get_study_path(self,comment:str):
+        return os.path.join("opts", f"{comment}.db")
 
     def optimize(
         self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int, stage:Optional[int]=None,
@@ -444,7 +445,7 @@ class TrainBootstrap:
         self.study_file=self.file.get_exp_instance(stage_comment)
         if not os.path.exists("opts"):
             os.mkdir("opts")
-        storage_path = os.path.join("opts", f"{stage_comment}.db")
+        storage_path = self._get_study_path(stage_comment)
         # do not save storage in diagnose mode
         if self._diagnose_mode:
             storage_path=None
@@ -512,25 +513,23 @@ class TrainBootstrap:
         self._hp_manager._set_trial(trial)
         # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
-        trial.user_attrs['trial_id']=trial_id
-        trial.user_attrs['num_epochs']=self._epoch_num
+        trial.set_user_attr('trial_id',trial_id)
+        trial.set_user_attr('num_epochs',self._epoch_num)
 
         logger.info(f"this is trial {trial._trial_id}, real id {trial_id}")
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
-        self.helper = TrainHelper(
-            trial,
-            arg_str=self._extra_arg_str,
+        self.staff = ModelStaff(
             file_helper=trial_file,
             prev_file_helper=prev_file_helper,
             dev=self._dev,
         )
-        recipe._set_helper(self.helper)
-        recipe.prepare(self._hp_manager,self.helper,inherit_states)
+        recipe._set_staff(self.staff)
+        recipe.prepare(self._hp_manager,self.staff,inherit_states)
         # set optimizer
-        self.helper._reg_optimizer(recipe.set_optimizers(self.helper._model,self._hp_manager,self.helper))
-        _scheduler=recipe.set_scheduler(self.helper._optimizer,self._hp_manager,self.helper)
+        self.staff._reg_optimizer(recipe.set_optimizers(self.staff._model,self._hp_manager,self.staff))
+        _scheduler=recipe.set_scheduler(self.staff._optimizer,self._hp_manager,self.staff)
         if _scheduler is not None:
-            self.helper._reg_scheduler(_scheduler)
+            self.staff._reg_scheduler(_scheduler)
         del _scheduler
 
         best_score=self._inf_score
@@ -552,17 +551,17 @@ class TrainBootstrap:
                 recovered_epoch=state['cur_epochi']
                 best_score=state['best_score']
         
-        assert self.helper._get_flag('trainval_data_set'), "train or val set not set"
-        if not self.helper._get_flag('test_data_set'):
+        assert self.staff._get_flag('trainval_data_set'), "train or val set not set"
+        if not self.staff._get_flag('test_data_set'):
             logger.warning("test set not set. test phase will be skipped.")
         
         # create checkpoint dir
         trial_file.prepare_checkpoint_dir()
         # create board dir before training
         tbwriter = SummaryWriter(trial_file.default_board_dir)
-        self._report_info(helper=self.helper,board_dir=tbwriter.log_dir)
+        self._report_info(helper=self.staff,board_dir=tbwriter.log_dir)
         # append all params (suggested and fixed) into attrs
-        trial.user_attrs['params']=self._hp_manager.params
+        trial.set_user_attr('params',self._hp_manager.params)
 
         if dist.is_enabled():
             dist.barrier()
@@ -582,42 +581,42 @@ class TrainBootstrap:
                 logger.info(f"[HELPER] fast pass epoch {recovered_epoch}")
                 continue
             
-            self._prepare_dataloader_for_epoch(self.helper._dataloader_train)
+            self._prepare_dataloader_for_epoch(self.staff._dataloader_train)
             phase_train=PhaseHelper(
                 "train",
-                self.helper._data_train,
-                self.helper._dataloader_train,
+                self.staff._data_train,
+                self.staff._dataloader_train,
                 dry_run=self._diagnose_mode,
-                custom_probes=self.helper._custom_probes.copy(),
-                dev=self.helper.dev
+                custom_probes=self.staff._custom_probes.copy(),
+                dev=self.staff.dev
             )
             recipe.run_train_phase(phase_train)
             phase_train._check_update()
             self._end_phase(epochi,phase_train)
 
-            self._prepare_dataloader_for_epoch(self.helper._dataloader_val)
+            self._prepare_dataloader_for_epoch(self.staff._dataloader_val)
             phase_val=PhaseHelper(
                 "val",
-                self.helper._data_val,
-                self.helper._dataloader_val,
+                self.staff._data_val,
+                self.staff._dataloader_val,
                 dry_run=self._diagnose_mode,
-                custom_probes=self.helper._custom_probes.copy(),
-                dev=self.helper.dev
+                custom_probes=self.staff._custom_probes.copy(),
+                dev=self.staff.dev
             )
             recipe.run_val_phase(phase_val)
             phase_val._check_update()
             score=phase_val.score
             self._end_phase(epochi,phase_val)
 
-            if self.helper._get_flag('test_data_set'):
-                self._prepare_dataloader_for_epoch(self.helper._dataloader_test)
+            if self.staff._get_flag('test_data_set'):
+                self._prepare_dataloader_for_epoch(self.staff._dataloader_test)
                 phase_test=PhaseHelper(
                     "test",
-                    self.helper._data_test,
-                    self.helper._dataloader_test,
+                    self.staff._data_test,
+                    self.staff._dataloader_test,
                     dry_run=self._diagnose_mode,
-                    custom_probes=self.helper._custom_probes.copy(),
-                    dev=self.helper.dev
+                    custom_probes=self.staff._custom_probes.copy(),
+                    dev=self.staff.dev
                 )
                 recipe.run_train_phase(phase_test)
                 phase_test._check_update()
@@ -682,7 +681,7 @@ class TrainBootstrap:
                 logger.warning("entering pdb")
                 pdb.set_trace()
         
-        self._latest_states=recipe.end(self.helper)
+        self._latest_states=recipe.end(self.staff)
         
         return best_score
     
@@ -728,9 +727,23 @@ class TrainBootstrap:
         else:
             return None
     
-    def test(self,stage:Optional[int]=None):
+    def get_test_pack(self,recipe:ModuleRecipe,stage:Optional[int]=None):
         stage_comment=self._get_comment(stage)
+        study = optuna.create_study(study_name='deadbeef',storage=f"sqlite:///{self._get_study_path(stage_comment)}",load_if_exists=True)
+        best_trial=study.best_trial
+        self._hp_manager.load_params(best_trial.user_attrs['params'])
+
         best_file=self.file.get_exp_instance(stage_comment)
+        staff = ModelStaff(
+            file_helper=best_file,
+            prev_file_helper=None,
+            dev=self._dev,
+        )
+        recipe._set_staff(staff)
+        recipe.prepare(self._hp_manager,self.staff,{})
+
+
+        
         raise NotImplementedError()
 
 

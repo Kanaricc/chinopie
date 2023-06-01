@@ -8,7 +8,7 @@ from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 import chinopie
 from chinopie import logger
-from chinopie.modelhelper import TrainHelper,PhaseHelper,HyperparameterManager
+from chinopie.modelhelper import ModelStaff,PhaseHelper,HyperparameterManager
 
 
 class ModuleRecipe(ABC):
@@ -17,46 +17,44 @@ class ModuleRecipe(ABC):
         pass
 
 
-    def prepare(self,hp_manager:HyperparameterManager,helper:TrainHelper,inherited_states:Dict[str,Any]):
+    def prepare(self,hp_manager:HyperparameterManager,staff:ModelStaff,inherited_states:Dict[str,Any]):
         """
         prepare models and probes here
         """
         pass
 
-    def end(self,helper:TrainHelper)->Dict[str,Any]:
+    def end(self,helper:ModelStaff)->Dict[str,Any]:
         logger.info("pass empty state to next stage")
         return {}
 
     @abstractmethod
-    def set_optimizers(self,model,hp_manager:HyperparameterManager,helper:TrainHelper)->Optimizer:
+    def set_optimizers(self,model,hp_manager:HyperparameterManager,staff:ModelStaff)->Optimizer:
         ...
 
-    def set_scheduler(self,optimizer:Optimizer,hp_manager:HyperparameterManager,helper:TrainHelper)->Optional[LRScheduler]:
+    def set_scheduler(self,optimizer:Optimizer,hp_manager:HyperparameterManager,staff:ModelStaff)->Optional[LRScheduler]:
         logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
         return None
     
-    # TODO: this should be removed
-    def _set_helper(self,helper:TrainHelper):
-        self._helper=helper
-    
+    def _set_staff(self,staff:ModelStaff):
+        self._staff=staff
     
     @property
     def model(self):
-        return self._helper._model
+        return self._staff._model
     
     @property
     def optimizer(self):
-        return self._helper._optimizer
+        return self._staff._optimizer
     
     @property
     def scheduler(self):
-        if hasattr(self._helper,'_scheduler'):
-            return self._helper._scheduler
+        if hasattr(self._staff,'_scheduler'):
+            return self._staff._scheduler
         return None
     
     @property
     def dev(self):
-        return self._helper.dev
+        return self._staff.dev
     
     
     def switch_train(self,model:nn.Module):
