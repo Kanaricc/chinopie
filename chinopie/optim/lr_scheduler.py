@@ -20,9 +20,3 @@ class ConstantWarmupScheduler(_LRScheduler):
         if self.last_epoch >= self.warmup_epoch:
             return self.successor.get_last_lr()
         return [self.const_lr_factor * base for base in self.base_lrs]
-
-    
-
-    
-
-    

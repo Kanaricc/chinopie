@@ -15,6 +15,9 @@ from torch import nn
 import torch.nn.functional as F
 from loguru import logger
 
+from . import MultiLabelLocalDataset
+from .. import extract_zip,download_with_progress
+
 
 TRAINVAL_DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtrainval_06-Nov-2007.tar"
 TEST_DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2007/VOCtest_06-Nov-2007.tar"
@@ -67,24 +70,24 @@ def prepare_voc07(root: str,ignore_difficult_label:bool=True):
     cached_test_annotation = os.path.join(tmp_dir, "VOCtestnoimgs_06-Nov-2007.tar")
     if not os.path.exists(cached_tv_file):
         logger.warning(f"downloading voc2007 trainval dataset")
-        subprocess.call(f"wget -O {cached_tv_file} {TRAINVAL_DATA_URL}", shell=True)
+        download_with_progress(TRAINVAL_DATA_URL,cached_tv_file)
         logger.warning("done")
     if not os.path.exists(cached_test_file):
         logger.warning(f"downloading voc2007 test dataset")
-        subprocess.call(f"wget -O {cached_test_file} {TEST_DATA_URL}", shell=True)
+        download_with_progress(TEST_DATA_URL,cached_test_file)
         logger.warning("done")
     if not os.path.exists(cached_test_annotation):
         logger.warning(f"downloading voc2007 test dataset")
-        subprocess.call(f"wget -O {cached_test_annotation} {TEST_ANNOTATION_URL}", shell=True)
+        download_with_progress(TEST_ANNOTATION_URL,cached_test_annotation)
         logger.warning("done")
 
     extracted_dir = os.path.join(tmp_dir, "extracted")
     if not os.path.exists(extracted_dir):
         logger.warning(f"extracting dataset")
         os.mkdir(extracted_dir)
-        subprocess.call(f"tar -xf {cached_tv_file} -C {extracted_dir}", shell=True)
-        subprocess.call(f"tar -xf {cached_test_file} -C {extracted_dir}", shell=True)
-        subprocess.call(f"tar -xf {cached_test_annotation} -C {extracted_dir}", shell=True)
+        extract_zip(cached_tv_file,extracted_dir)
+        extract_zip(cached_test_file,extracted_dir)
+        extract_zip(cached_test_annotation,extracted_dir)
         logger.warning("done")
 
     vocdevkit = os.path.join(extracted_dir, "VOCdevkit", "VOC2007")
@@ -95,9 +98,7 @@ def prepare_voc07(root: str,ignore_difficult_label:bool=True):
     if not os.path.exists(img_dir):
         logger.warning(f"refactor images dir structure")
         assert os.path.exists(os.path.join(vocdevkit, "JPEGImages"))
-        subprocess.call(
-            f"mv '{os.path.join(vocdevkit,'JPEGImages')}' '{img_dir}'", shell=True
-        )
+        shutil.move(os.path.join(vocdevkit,'JPEGImages'),img_dir)
         logger.warning("done")
 
     cat_json = os.path.join(root, "categories.json")
@@ -170,92 +171,25 @@ def prepare_voc07(root: str,ignore_difficult_label:bool=True):
 
         logger.warning("done")
 
-
-class VOC2007Dataset(Dataset):
-    def __init__(
-        self,
-        root: str,
-        preprocess: Any,
-        phase: str = "train",
-        negatives_as_neg1: bool = False,
-    ):
+class VOC2007Dataset(MultiLabelLocalDataset):
+    def __init__(self, root:str,preprocess:Any,extra_preprocess=None,phase='train',negatives_as_neg1=False) -> None:
         assert phase in ["train","val","trainval","test"]
         prepare_voc07(root)
 
-        self.root = root
-        self.preprocess = preprocess
-        self.phase = phase
-        self.negatives_as_neg1 = negatives_as_neg1
+        with open(os.path.join(root, f"annotations_{phase}.json"), "r") as f:
+            img_list = json.load(f)
+        with open(os.path.join(root, f"categories.json"), "r") as f:
+            cat2id = json.load(f)
 
-        with open(os.path.join(self.root, f"annotations_{self.phase}.json"), "r") as f:
-            self.img_list = json.load(f)
-        with open(os.path.join(self.root, f"categories.json"), "r") as f:
-            self.cat2id = json.load(f)
-
-        self.num_classes = len(self.cat2id)
-
-        full_set = set(range(self.num_classes))
-        for img in self.img_list:
-            img["negative_labels"] = list(full_set - set(img["labels"]))
 
         logger.warning(
-            f"[VOC2007] load num of classes {len(self.cat2id)}, num images {len(self.img_list)}"
+            f"[VOC2007] load num of classes {len(cat2id)}, num images {len(img_list)}"
         )
 
-    def reg_extra_preprocess(self, preprocess: Any):
-        self.extra_preprocess = preprocess
+        num_labels = len(cat2id)
+        img_paths=list(map(lambda x:os.path.join(root, "img", x['name']),img_list))
+        annotations=list(map(lambda x:x['labels'],img_list))
+        annotation_labels=get_voc_labels()
 
-    def __getitem__(self, index):
-        item = self.img_list[index]
 
-        _, filename, target, nagatives = (
-            item["id"],
-            item["name"],
-            item["labels"],
-            item["negative_labels"],
-        )
-        rgb_image = Image.open(os.path.join(self.root, "img", filename)).convert("RGB")
-        image = self.preprocess(rgb_image)
-
-        target2 = torch.zeros(self.num_classes, dtype=torch.int)
-        target2[target] = 1
-        if self.negatives_as_neg1:
-            target2[nagatives] = -1
-
-        res = {
-            "index": index,
-            "name": filename,
-            "image": image,
-            "target": target2,
-        }
-        if hasattr(self, "extra_preprocess"):
-            extra_image = self.extra_preprocess(rgb_image)
-            res["extra_image"] = extra_image
-        return res
-
-    def __len__(self):
-        return len(self.img_list)
-
-    def retain(self, l: int, r: int):
-        self.img_list = self.img_list[l:r]
-
-    def get_all_labels(self):
-        tmp = torch.zeros((len(self.img_list), self.num_classes), dtype=torch.long)
-        for i in range(len(self.img_list)):
-            tmp[i][self.img_list[i]["labels"]] = 1
-            if self.negatives_as_neg1:
-                tmp[i][self.img_list[i]["negative_labels"]] = -1
-
-        return tmp
-
-    def apply_new_labels(self, labels: Tensor):
-        assert (
-            labels.size(0) == len(self.img_list) and labels.size(1) == self.num_classes
-        )
-        assert labels.dtype == torch.int or labels.dtype == torch.long
-        for i in range(len(self.img_list)):
-            label = labels[i]
-            self.img_list[i]["labels"] = (label == 1).nonzero(as_tuple=True)[0].tolist()
-            self.img_list[i]["negative_labels"] = (
-                (label == -1).nonzero(as_tuple=True)[0].tolist()
-            )
+        super().__init__(img_paths, num_labels, annotations, annotation_labels, preprocess, extra_preprocess, negatives_as_neg1)

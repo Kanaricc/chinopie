@@ -1,362 +1,163 @@
-import os, sys
+from datetime import datetime
+import os, sys, shutil,pdb
 import argparse
-import pathlib
 import random
 import inspect
-from typing import Any, Callable, Dict, List, Optional
-from typing_extensions import Self
+from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+
+
 import torch
+import torch.backends.mps
 from torch import nn
-import numpy as np
 from torch.functional import Tensor
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
-import torch.distributed as dist
-
-from datetime import datetime
-
+from torch.utils.data.distributed import DistributedSampler
+from torch.optim import Optimizer
+from torch.optim.lr_scheduler import LRScheduler
+import optuna
+from optuna.distributions import CategoricalChoiceType
+import numpy as np
 from loguru import logger
 
-from .probes.avgmeter import AverageMeter, NumericMeter
+from .probes.avgmeter import AverageMeter
 from .datasets.fakeset import FakeEmptySet
+from . import iddp as dist
+from .filehelper import GlobalFileHelper,InstanceFileHelper
+from .phasehelper import (
+    PhaseHelper,
+)
+from .utils import show_params_in_3cols,create_snapshot,check_gitignore,set_fixed_seed
 
-from tqdm import tqdm
-from prettytable import PrettyTable,PLAIN_COLUMNS
+# LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
+LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
 
-from torch.utils.data.distributed import DistributedSampler
+class HyperparameterManager:
+    def __init__(self) -> None:
+        self._param_config:Dict[str,Optional[Any]]={}
+        self._arg_parser=argparse.ArgumentParser()
 
-LOGGER_FORMAT='<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>'
-
-DIR_SHARE_STATE = "state"
-DIR_CHECKPOINTS = "checkpoints"
-DIR_DATASET = "data"
-DIR_TENSORBOARD = "boards"
-
-
-class DdpSession:
-    def __init__(self):
-        pass
-
-    @staticmethod
-    def is_main_process():
-        return dist.get_rank() == 0
-
-
-class FileHelper:
-    def __init__(
-            self, disk_root: str, comment: str, ddp_session: Optional[DdpSession] = None
-    ):
-        self.disk_root = disk_root
-        self.ddp_session = ddp_session
-        self.comment = comment
-
-        if self._is_main_process():
-            if not os.path.exists(os.path.join(self.disk_root, DIR_CHECKPOINTS)):
-                os.mkdir(os.path.join(self.disk_root, DIR_CHECKPOINTS))
-            if not os.path.exists(os.path.join(self.disk_root, DIR_TENSORBOARD)):
-                os.mkdir(os.path.join(self.disk_root, DIR_TENSORBOARD))
-            if not os.path.exists(os.path.join(self.disk_root, DIR_DATASET)):
-                os.mkdir(os.path.join(self.disk_root, DIR_DATASET))
-            if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
-                os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
-
-        if self.ddp_session:
-            dist.barrier()
-
-        self.ckpt_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
-        self.board_dir = os.path.join(
-            self.disk_root,
-            DIR_TENSORBOARD,
-            f"{self.comment}-{datetime.now().strftime('%Y.%m.%d.%H.%M.%S')}",
-        )
-
-    def prepare_checkpoint_dir(self):
-        if not os.path.exists(self.ckpt_dir):
-            if self._is_main_process():
-                os.mkdir(self.ckpt_dir)
-        if self.ddp_session:
-            dist.barrier()
-
-    def find_latest_checkpoint(self) -> Optional[str]:
-        """
-        find the latest checkpoint file at checkpoint dir.
-        """
-
-        if not os.path.exists(self.ckpt_dir):
-            return None
-
-        checkpoint_files: List[str] = []
-        for (dirpath, dirnames, filenames) in os.walk(self.ckpt_dir):
-            checkpoint_files.extend(filenames)
-
-        latest_checkpoint_path = None
-        latest_checkpoint_epoch = -1
-
-        for file in checkpoint_files:
-            if file.find("best") != -1:
-                continue
-            if file.find("init") != -1:
-                continue
-            if file.find("checkpoint") == -1:
-                continue
-            epoch = int(file.split(".")[0].split("-")[1])
-            if epoch > latest_checkpoint_epoch:
-                latest_checkpoint_epoch = epoch
-                latest_checkpoint_path = file
-
-        if latest_checkpoint_path:
-            return os.path.join(self.ckpt_dir, latest_checkpoint_path)
-
-    def get_initparams_slot(self) -> str:
-        if not self._is_main_process():
-            logger.warning("[DDP] try to get checkpoint slot on follower")
-        logger.info("[INIT] you have ask for initialization slot")
-        filename = f"init.pth"
-        return os.path.join(self.ckpt_dir, filename)
-
-    def get_checkpoint_slot(self, cur_epoch: int) -> str:
-        if not self._is_main_process():
-            logger.warning("[DDP] try to get checkpoint slot on follower")
-        filename = f"checkpoint-{cur_epoch}.pth"
-        return os.path.join(self.ckpt_dir, filename)
-
-    def get_dataset_slot(self, dataset_id: str) -> str:
-        return os.path.join(self.disk_root, DIR_DATASET, dataset_id)
+        self._fixed=False
     
-    def get_state_slot(self,*name:str)->str:
-        path=os.path.join(self.disk_root,DIR_SHARE_STATE,*name)
-        parent=pathlib.Path(path).parent
-        if not parent.exists():
-            os.makedirs(parent)
-        return path
+    def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
+        assert self._fixed==False, "cannot reg new parameter after fixed"
+        if name not in self._param_config:
+            self._arg_parser.add_argument(f"--{name}",required=False)
+            self._param_config[name] = value
 
-    def get_best_checkpoint_slot(self) -> str:
-        if not self._is_main_process():
-            logger.warning("[DDP] try to get checkpoint slot on follower")
-        return os.path.join(self.ckpt_dir, "best.pth")
+    def reg_int(self, name: str, value: Optional[int] = None):
+        assert self._fixed==False, "cannot reg new parameter after fixed"
+        if name not in self._param_config:
+            self._arg_parser.add_argument(f"--{name}",type=int,required=False)
+            self._param_config[name] = value
 
-    def get_default_board_dir(self) -> str:
-        return self.board_dir
-
-    def _is_main_process(self):
-        return self.ddp_session is None or self.ddp_session.is_main_process()
-
-
-class PhaseHelper:
-    class JumpPhaseException(Exception):
-        pass
-
-    _phase_name: str
-    _loss_probe: AverageMeter
-    _output_dist_probes: List[NumericMeter]
-    _custom_probe_name: List[str]
-    _custom_probes: Dict[str, AverageMeter]
-    _dataset: Any
-    _dataloader: DataLoader
-    _score: float
-    _ddp_session: Optional[DdpSession]
-    _dry_run: bool
-
-    _loss_updated: bool
-    _score_updated: bool
-
-    _exit_callback: Callable[[Self], None]
-    _break_phase: bool
-
-    def __init__(
-            self,
-            phase_name: str,
-            dataset: Any,
-            dataloader: DataLoader,
-            ddp_session: Optional[DdpSession] = None,
-            dry_run: bool = False,
-            custom_probes: List[str] = [],
-            exit_callback: Callable[[Self], None] = lambda x: None,
-            break_phase: bool = False,
-    ) -> None:
-        self._output_updated = True
-        self._phase_name = phase_name
-        self._dry_run = dry_run
-        self._ddp_session = ddp_session
-        self._dataset = dataset
-        self._dataloader = dataloader
-
-        self._custom_probe_name = custom_probes
-        self._exit_callback = exit_callback
-        self._break_phase = break_phase
-
-    def get_data_sample(self):
-        for data in self._dataloader:
-            return data
-
-    def range_data(self):
-        if self._break_phase:
-            self._loss_updated = True
-            self._score_updated = True
-            raise self.JumpPhaseException
-
-        batch_len = len(self._dataloader)
-        if self._is_main_process():
-            with tqdm(total=batch_len,ncols=64) as progressbar:
-                for batchi, data in enumerate(self._dataloader):
-                    yield batchi, data
-                    progressbar.update()
-                    if self._dry_run and batchi>=2:
-                        break
+    def reg_float(self, name: str, value: Optional[float] = None):
+        assert self._fixed==False, "cannot reg new parameter after fixed"
+        if name not in self._param_config:
+            self._arg_parser.add_argument(f"--{name}",type=float,required=False)
+            self._param_config[name] = value
+    
+    def parse_args(self,raw_args:List[str]):
+        args=self.arg_parser.parse_args(raw_args)
+        logger.debug(f"hyperparameters in argparser: {args}")
+        for k in self._param_config.keys():
+            if getattr(args,k) is not None:
+                self._param_config[k]=getattr(args,k)
+                logger.debug(f"flushed `{k}`")
+    
+    def load_params(self,val:Dict[str,Any]):
+        self._param_config|=val
+    
+    def _set_trial(self,trial:optuna.Trial):
+        self._trial=trial
+        self._fixed=True
+        
+    
+    def suggest_category(
+        self, name: str, choices: Sequence[CategoricalChoiceType]
+    ) -> CategoricalChoiceType:
+        assert name in self._param_config, f"request for unregisted param `{name}`"
+        fixed_val = self._param_config[name]
+        if fixed_val is not None:
+            assert fixed_val in choices
+            logger.debug(f"using fixed param `{name}`")
+            return fixed_val
         else:
-            for batchi, data in enumerate(self._dataloader):
-                yield batchi, data
-                if self._dry_run and batchi>=2:
-                    break
+            logger.debug(f"suggesting dynamic param `{name}`")
+            self._param_config[name] = self._trial.suggest_categorical(name, choices)
+            return self._param_config[name]
 
-    def __enter__(self):
-        self._score = 0.0
-        self._loss_probe = AverageMeter("")
-        self._output_dist_probes = []
-        self._custom_probes = dict(
-            [(x, AverageMeter(x)) for x in self._custom_probe_name]
-        )
-
-        self._loss_updated = False
-        self._score_updated = False
-        self._output_updated = False
-
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type == self.JumpPhaseException:
-            return True
-
-        if not self._score_updated:
-            logger.error(f"no score updated during phase {self._phase_name}")
-        if not self._loss_updated:
-            logger.error(f"no loss updated during phase {self._phase_name}")
-        if not self._output_updated:
-            logger.error(f"no output updated during phase {self._phase_name}")
-
-        for name in self._custom_probe_name:
-            logger.error(f"{name} not updated during phase {self._phase_name}")
-
-        self._exit_callback(self)
-
-    def update_probe(self, name: str, value: float, n: int = 1):
-        if name in self._custom_probe_name:
-            self._custom_probe_name.remove(name)
-        self._custom_probes[name].update(value, n)
-
-    @staticmethod
-    def validate_loss(loss: Tensor, panic: bool = True) -> bool:
-        hasnan = loss.isnan().any().item()
-        hasinf = loss.isinf().any().item()
-        hasneg = (loss < 0).any().item()
-        if panic:
-            assert not hasnan, f"loss function returns invalid value `nan`: {loss}"
-            assert not hasinf, f"loss function returns invalid value `inf`: {loss}"
-            assert not hasneg, f"loss function returns negative value: {loss}"
-        return not hasnan and not hasinf and not hasneg
-
-    @staticmethod
-    def validate_tensor(t: Tensor, panic: bool = True, msg: str = "") -> bool:
-        hasnan = t.isnan().any().item()
-        hasinf = t.isinf().any().item()
-
-        if panic:
-            assert not hasnan, f"tensor has invalid value `nan`: {t} ({msg})"
-            assert not hasinf, f"tensor has invalid value `inf`: {t} ({msg})"
-
-        return not hasnan and not hasinf
-
-    def update_loss(self, loss: Tensor, n: int = 1):
-        self._loss_updated = True
-        self.validate_loss(loss)
-        self._loss_probe.update(loss.item(), n)
-
-    def update_output(self, *outputs):
-        self._output_updated=True
-        for k, v in enumerate(outputs):
-            assert type(v) == Tensor
-            self.validate_tensor(v)
-            if len(self._output_dist_probes) - 1 < k:
-                self._output_dist_probes.append(NumericMeter(f"{k}"))
-
-            self._output_dist_probes[k].update(v.cpu().detach())
-
-    def end_phase(self, score: float):
-        self._score_updated = True
-
-        self._score = score
-
-    def _is_main_process(self):
-        return self._ddp_session is None or self._ddp_session.is_main_process()
-
-    @property
-    def loss_probe(self):
-        return self._loss_probe
-
-    @property
-    def score(self):
-        return self._score
-
-    @property
-    def custom_probes(self):
-        return self._custom_probes
-
-
-class TrainHelper:
-    dev: str
-    _best_val_score: float
-    _dry_run: bool
-
-    _custom_global_params: Dict[str, Any]
-    _fastforward_handlers:List[Callable[[int],None]]
-    _data_train: Any
-    _data_val: Any
-    _data_test: Any
-    _dataloader_train: DataLoader
-    _dataloader_val: DataLoader
-    _dataloader_test: DataLoader
-    _batch_size: int
-
-    _trigger_best_score: bool
-    _trigger_state_save: bool
-    _trigger_checkpoint: bool
-    _trigger_run_test: bool
-
-    def __init__(
-            self,
-            disk_root: str,
-            epoch_num: int,
-            batch_size: int,
-            load_checkpoint: bool,
-            enable_checkpoint: bool,
-            checkpoint_save_period: Optional[int],
-            comment: str,
-            details: Optional[str] = None,
-            dev: str = "",
-            enable_ddp=False,
-            dry_run: bool = False,
-    ) -> None:
-        logger.warning("[HELPER] details for this run")
-        logger.warning(details)
-
-        self._epoch_num = epoch_num
-        self._batch_size = batch_size
-        self._load_checkpoint = load_checkpoint
-        self._enable_checkpoint = enable_checkpoint
-        if checkpoint_save_period is not None:
-            self._checkpoint_save_period = checkpoint_save_period
+    def suggest_int(self, name: str, low: int, high: int, step=1, log=False) -> int:
+        assert name in self._param_config, f"request for unregisted param `{name}`"
+        fixed_val = self._param_config[name]
+        if fixed_val is not None:
+            if fixed_val< low or fixed_val>high:
+                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
+            logger.debug(f"using fixed param `{name}`")
+            return fixed_val
         else:
-            self._checkpoint_save_period = 1
-        self._comment = comment
-        self._ddp_session = DdpSession() if enable_ddp else None
+            logger.debug(f"suggesting dynamic param `{name}`")
+            self._param_config[name] =  self._trial.suggest_int(name, low, high, step, log)
+            return self._param_config[name] # type: ignore
 
-        if self._ddp_session:
-            dist.barrier()
+    def suggest_float(
+        self,
+        name: str,
+        low: float,
+        high: float,
+        step: Optional[float] = None,
+        log=False,
+    ) -> float:
+        assert name in self._param_config, f"request for unregisted param `{name}`"
+        fixed_val = self._param_config[name]
+        if fixed_val is not None:
+            if fixed_val< low or fixed_val>high:
+                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
+            logger.debug(f"using fixed param `{name}`")
+            return fixed_val
+        else:
+            logger.debug(f"suggesting dynamic param `{name}`")
+            self._param_config[name] =  self._trial.suggest_float(name, low, high, step=step, log=log)
+            return self._param_config[name] # type: ignore
+    
+    @property
+    def arg_parser(self):
+        return self._arg_parser
+    
+    @property
+    def params(self):
+        return self._param_config
+    
+    
 
-        self.file = FileHelper(disk_root, comment, self._ddp_session)
-        self._board_dir = self.file.get_default_board_dir()
+# ModelStaff has no state
+class ModelStaff:
+    def __init__(
+        self,
+        file_helper: InstanceFileHelper,
+        prev_file_helper:Optional[InstanceFileHelper],
+        dev: str,
+    ) -> None:
+        self.file=file_helper
+        self.prev_file=prev_file_helper
 
-        if self._ddp_session:
+        if dist.is_enabled():
+            logger.info(
+                f"[DDP] ddp is enabled. current rank is {dist.get_rank()}."
+            )
+            logger.info(
+                f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
+            )
+
+            if dist.is_main_process():
+                logger.info(
+                    f"[DDP] rank {dist.get_rank()} is the leader. methods are fully enabled."
+                )
+            else:
+                logger.info(
+                    f"[DDP] rank {dist.get_rank()} is the follower. some methods are disabled."
+                )
+
             world_size = dist.get_world_size()
             assert world_size != -1, "helper must be init after dist"
             if world_size <= torch.cuda.device_count():
@@ -366,36 +167,14 @@ class TrainHelper:
                     f"[DDP] world_size is larger than the number of devices. assume use CPU."
                 )
                 self.dev = f"cpu:{dist.get_rank()}"
-
-            # logger file
-            logger.remove()
-            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
-            logger.add(f"log-{self._comment}({dist.get_rank()}).log",format=LOGGER_FORMAT)
-
-            logger.warning(f"[DDP] ddp is enabled. current rank is {dist.get_rank()}.")
-            logger.info(
-                f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
-            )
-
-            if self._is_main_process():
-                logger.info(
-                    f"[DDP] rank {dist.get_rank()} as main process, methods are enabled for it."
-                )
-            else:
-                logger.info(
-                    f"[DDP] rank {dist.get_rank()} as follower process, methods are disabled for it."
-                )
-
         else:
-            # logger file
-            logger.remove()
-            logger.add(sys.stderr, level="INFO",format=LOGGER_FORMAT)
-            logger.add(f"log-{self._comment}.log",format=LOGGER_FORMAT)
-
             if dev == "":
                 if torch.cuda.is_available():
                     self.dev = "cuda"
-                    logger.info("use cuda as default device")
+                    logger.info("cuda found. use cuda as default device")
+                elif torch.backends.mps.is_available():
+                    self.dev = "mps"
+                    logger.info("mps found. use mps as default device")
                 else:
                     self.dev = "cpu"
                     logger.info("use CPU as default device")
@@ -404,422 +183,570 @@ class TrainHelper:
                 logger.info(f"use custom device `{dev}`")
 
         self._custom_probes = []
-        self._custom_global_params = {}
-        self._fastforward_handlers = []
-        self._dry_run = dry_run
-
-        if self._dry_run:
-            self._enable_checkpoint = False
-            self._load_checkpoint = False
-            torch.autograd.anomaly_mode.set_detect_anomaly(True)
-
-    def _is_main_process(self):
-        return self._ddp_session is None or self._ddp_session.is_main_process()
-
-    def if_need_load_checkpoint(self):
-        return self._load_checkpoint
-
-    def if_need_save_checkpoint(self):
-        t = self._trigger_checkpoint
-        self._trigger_checkpoint = False
-        if not self._is_main_process():
-            return False
-        return self._enable_checkpoint and t
-
-    def if_need_save_best_checkpoint(self):
-        t = self._trigger_best_score
-        self._trigger_best_score = False
-        if not self._is_main_process():
-            return False
-        return self._enable_checkpoint and t
-
-    def load_from_checkpoint(self, checkpoint: Dict[str, Any]):
-        """
-        load checkpoint file, including model state, epoch index.
-        """
-        self._board_dir = checkpoint["board_dir"]
-        self._recoverd_epoch = checkpoint["cur_epoch"]
-        self._best_val_score = checkpoint["best_val_score"]
-        logger.info(f"[CHECKPOINT] load state from checkpoint")
-
-    def export_state(self):
-        self._trigger_state_save = False
-        return {
-            "board_dir": self._board_dir,
-            "cur_epoch": self.cur_epoch,
-            "best_val_score": self._best_val_score,
-        }
+        self._flags={}
+    
+    def _set_flag(self,key:str,val:Any=True):
+        self._flags[key]=val
+    
+    def _get_flag(self,key:str):
+        return self._flags[key] if key in self._flags else None
 
     def register_probe(self, name: str):
         self._custom_probes.append(name)
-
-    def register_global_params(self, name: str, value: Any):
-        self._custom_global_params[name] = value
-    
-    def register_fastforward_handler(self,func:Callable[[int],None]):
-        self._fastforward_handlers.append(func)
+        logger.debug(f"register probe `{name}`")
 
     def register_dataset(
-            self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
+        self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
     ):
         self._data_train = train
         self._dataloader_train = trainloader
         self._data_val = val
         self._dataloader_val = valloader
+        logger.debug("registered train and val set")
+        self._set_flag('trainval_data_set')
 
-        assert (
-                self._dataloader_train.batch_size == self._batch_size
-        ), f"batch size of dataloader_train does not match"
-        if self._dataloader_val.batch_size != self._batch_size:
-            logger.warning("[HELPER] batch size of dataloader_val does not match")
+        # worker_init_fn are used in data iteration
+        self._dataloader_train.worker_init_fn=worker_init_fn
+        self._dataloader_val.worker_init_fn=worker_init_fn
 
-        if self._ddp_session:
+        if dist.is_enabled():
             assert isinstance(self._dataloader_train.sampler, DistributedSampler)
             assert not isinstance(self._dataloader_val.sampler, DistributedSampler)
+            logger.debug("ddp enabled, checked distributed sampler in train and val set")
 
     def register_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
         self._dataloader_test = testloader
+        logger.debug("registered test set. enabled test phase.")
+        self._set_flag('test_data_set')
 
-        assert (
-                self._dataloader_test.batch_size == self._batch_size
-        ), f"batch size of dataloader_test does not match"
+        self._dataloader_test.worker_init_fn=worker_init_fn
 
-        if self._ddp_session:
+        if dist.is_enabled():
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
+            logger.debug("ddp enabled, checked distributed sampler in test set")
+    
+    def reg_model(self,model:nn.Module):
+        self._model=model.to(self.dev)
+    
+    def _reg_optimizer(self,optimizer:Optimizer):
+        self._optimizer=optimizer
+    
+    def _reg_scheduler(self,scheduler:LRScheduler):
+        self._scheduler=scheduler
+    
+    def update_tb(self, epochi:int, phase: PhaseHelper, tbwriter:SummaryWriter):
+        assert phase._phase_name in ["train", "val", "test"]
+        if dist.is_enabled():
+            phase.loss_probe._sync_dist_nodes()
+            phase._score._sync_dist_nodes()
+            for k in phase.custom_probes:
+                phase.custom_probes[k]._sync_dist_nodes()
 
-    def set_fixed_seed(self, seed: Any, disable_ddp_seed=False):
-        if not self._ddp_session or disable_ddp_seed:
-            logger.info("[HELPER] fixed seed is set for random and torch")
-            os.environ["PYTHONHASHSEED"] = str(seed)
-            random.seed(seed)
-
-            torch.manual_seed(seed)
-            torch.cuda.manual_seed(seed)
-            torch.cuda.manual_seed_all(seed)
-
-            np.random.seed(seed)
-        else:
-            logger.info(
-                f"[DDP] fixed seed `{seed + dist.get_rank()}` is set for this process"
+        # only log probes in main process
+        if dist.is_main_process():
+            tbwriter.add_scalar(
+                f"loss/{phase._phase_name}", phase.loss_probe.average(), epochi
             )
-            os.environ["PYTHONHASHSEED"] = str(seed + dist.get_rank())
-            random.seed(seed + dist.get_rank())
+            tbwriter.add_scalar("score/train", phase.score, epochi)
 
-            torch.manual_seed(seed + dist.get_rank())
-            torch.cuda.manual_seed(seed + dist.get_rank())
-            torch.cuda.manual_seed_all(seed + dist.get_rank())
+            for k in self._custom_probes:
+                if phase.custom_probes[k].has_data():
+                    tbwriter.add_scalar(
+                        f"{k}/{phase._phase_name}",
+                        phase.custom_probes[k].average(),
+                        epochi,
+                    )
+                    logger.info(
+                        f"[{phase._phase_name} probes] {k}: {phase.custom_probes[k].average()}"
+                    )
 
-            np.random.seed(seed + dist.get_rank())
+# worker seed init in different threads
+def worker_init_fn(worker_id):
+    worker_seed=torch.initial_seed()%2**32
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
 
-    def get(self, name: str) -> Any:
-        assert name in self._custom_global_params
-        return self._custom_global_params[name]
+# all block sync should be done in bootstrap. all data sync should be done in helper.
 
-    def set_dry_run(self):
-        self._dry_run = True
-
-    def ready_to_train(self):
-        if (
-                not hasattr(self, "_data_train")
-                or not hasattr(self, "_data_val")
-                or not hasattr(self, "_dataloader_train")
-                or not hasattr(self, "_dataloader_val")
-        ):
-            logger.error("[DATASET] dataset not set")
-            raise RuntimeError("dataset not set")
-        if not hasattr(self, "_dataloader_test"):
-            logger.warning("[DATASET] test dataset not set. pass test phase.")
-
-        self.file.prepare_checkpoint_dir()
-        # make sure all processes waiting till the dir is done
-        if self._ddp_session:
-            dist.barrier()
-
-        # create board dir before training
-        self.tbwriter = SummaryWriter(self._board_dir)
-
-        if not hasattr(self, "_best_val_score"):
-            self._best_val_score = 0.0
-        self._trigger_best_score = False
-        self._trigger_checkpoint = False
-        self._trigger_state_save = False
-        self._trigger_run_test = False
-
-        self.report_info()
-        logger.warning("[TRAIN] ready to train model")
-
-    def report_info(self):
-        logger.warning(f"[PARAMS] device: {self.dev}")
-        logger.warning(f"[PARAMS] epoch num: {self._epoch_num}")
-        logger.warning(
-            f"[PARAMS] dataset: train({len(self._data_train)}) val({len(self._data_val)}) test({len(self._data_test) if hasattr(self, '_data_test') else 'not set'})"
+from .recipe import ModuleRecipe
+class TrainBootstrap:
+    def __init__(
+        self,
+        disk_root: str,
+        epoch_num: int,
+        load_checkpoint: bool,
+        save_checkpoint: bool,
+        comment: Optional[str],
+        checkpoint_save_period: int = 1,
+        enable_snapshot=False,
+        enable_prune=False,
+        seed:Optional[Any]=None,
+        dev="",
+        diagnose=False,
+        verbose=False,
+    ) -> None:
+        argparser=argparse.ArgumentParser(
+            prog='ChinoPie'
         )
-        logger.warning(f"[PARAMS] board dir: {self._board_dir}")
-        logger.warning(f"[PARAMS] checkpoint load: {self._load_checkpoint}")
-        logger.warning(f"[PARAMS] checkpoint save: {self._enable_checkpoint}")
-        logger.warning(f"[PARAMS] custom probes: {self._custom_probes}")
+        argparser.add_argument('-r','--disk_root',type=str,default=disk_root)
+        argparser.add_argument('-e','--epoch_num',type=int,default=epoch_num)
+        argparser.add_argument('-l','--load_checkpoint',action='store_true',default=load_checkpoint)
+        argparser.add_argument('-s','--save_checkpoint',action='store_true',default=save_checkpoint)
+        argparser.add_argument('-c','--comment',type=str,default=comment)
+        argparser.add_argument('--dev',type=str,default=dev)
+        argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
+        argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
+        argparser.add_argument('--clear',action='store_true',default=verbose)
+        args,self._extra_arg_str=argparser.parse_known_args()
 
-    def range_epoch(self):
-        if self._dry_run:
-            self._epoch_num = 2
-        for i in range(self._epoch_num):
-            if hasattr(self, "_recoverd_epoch") and i <= self._recoverd_epoch:
-                for item in self._fastforward_handlers:
-                    item(i)
-                logger.info(f"[HELPER] fast forward to epoch {self._recoverd_epoch}")
-                continue
-            self.cur_epoch = i
+        self._disk_root = args.disk_root
+        self._epoch_num = args.epoch_num
+        if args.comment is not None:
+            self._comment = args.comment
+        else:
+            self._comment = datetime.now().strftime("%Y%m%d%H%M%S")
+        self._load_checkpoint:bool = args.load_checkpoint
+        self._save_checkpoint:bool = args.save_checkpoint
+        self._checkpoint_save_period = checkpoint_save_period
+        self._dev = args.dev
+        self._diagnose_mode = args.diagnose
+        self._enable_prune=enable_prune
 
-            # begin of epoch
-            self._trigger_checkpoint = (
-                    self._enable_checkpoint
-                    and self.cur_epoch % self._checkpoint_save_period == 0
+        self._init_logger(args.verbose)
+
+        self.file=GlobalFileHelper(disk_root)
+
+        # set prune
+        if self._enable_prune:
+            logger.info('early stop is enabled')
+
+        # set clear
+        if args.clear:
+            # do clear
+            input("are you sure to clear all state files and logs? (press ctrl+c to quit)")
+            self.clear()
+        
+        # check git ignore
+        check_gitignore([self._disk_root])
+
+        # set diagnose mode
+        if diagnose:
+            torch.autograd.anomaly_mode.set_detect_anomaly(True)
+            logger.info("diagnose mode enabled")
+        
+        # set snapshot
+        if enable_snapshot:
+            if not diagnose:
+                create_snapshot(self._comment)
+                logger.info("created snapshot")
+            else:
+                logger.info("snapshot is disabled in diagnose mode")
+        
+        # set fixed seed
+        if seed is not None:
+            self.set_fixed_seed(seed)
+        
+        # prepare hyperparameter manager
+        self._hp_manager=HyperparameterManager()
+        
+        self._inherit_states:Dict[str,Any]={}
+    
+    @property
+    def hp(self):
+        return self._hp_manager
+    
+    def release(self):
+        if self._diagnose_mode:
+            self.file.clear_all_instance()
+            logger.info("deleted trial files in diagnose mode")
+    
+    def clear(self):
+        if os.path.exists('logs'):shutil.rmtree('logs')
+        if os.path.exists('opts'):shutil.rmtree('opts')
+    
+    def set_fixed_seed(self, seed: Any, ddp_seed=True):
+        if not dist.is_enabled() or not ddp_seed:
+            set_fixed_seed(seed)
+        else:
+            set_fixed_seed(seed+dist.get_rank())
+            logger.info("ddp detected, use different seed")
+    
+    def _flush_params(self):
+        self._hp_manager.parse_args(self._extra_arg_str)
+        
+
+    def _init_ddp(self):
+        logger.info("initialized ddp")
+
+    def _init_logger(self,verbose:bool):
+        stdout_level="INFO"
+        file_level="DEBUG"
+        if verbose:
+            stdout_level="DEBUG"
+            file_level="TRACE"
+        # logger file
+        if not os.path.exists("logs"):
+            os.mkdir("logs")
+        if dist.is_enabled():
+            logger.remove()
+            logger.add(sys.stderr, level=stdout_level, format=LOGGER_FORMAT)
+            logger.add(
+                f"logs/log_{self._comment}_r{dist.get_rank()}.log",
+                level=file_level,
+                format=LOGGER_FORMAT,
             )
+        else:
+            logger.remove()
+            logger.add(sys.stderr, level=stdout_level, format=LOGGER_FORMAT)
+            logger.add(f"logs/log_{self._comment}.log",level=file_level, format=LOGGER_FORMAT)
+        logger.info("initialized logger")
+    
+    def _report_info(self,helper:ModelStaff,board_dir:str):
+        dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
+        table = show_params_in_3cols(
+            params={
+                "proper device": self._dev,
+                "diagnose": self._diagnose_mode,
+                "epoch num": self._epoch_num,
+                "early stop": self._enable_prune,
+                "dataset": dataset_str,
+                "board dir": board_dir,
+                "checkpoint load/save": f"{self._load_checkpoint}/{self._save_checkpoint}",
+                "custom probes": helper._custom_probes,
+            }
+        )
+        logger.warning(f"[INFO]\n{table}")
+        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
+    
+    def _get_comment(self,stage:Optional[int]=None):
+        if stage is None:
+            stage_comment=self._comment
+        else:
+            stage_comment=f"{self._comment}({stage})"
+        return stage_comment
+    
+    def _get_study_path(self,comment:str):
+        return os.path.join("opts", f"{comment}.db")
 
-            if not self._ddp_session:
-                logger.warning(f"=== START EPOCH {self.cur_epoch} ===")
+    def optimize(
+        self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int, stage:Optional[int]=None,
+    ):
+        self._flush_params()
+                
+        stage_comment=self._get_comment(stage)
+        # find previous file helper
+        if stage and stage>0:
+            prev_file_helper=self.file.get_exp_instance(f"{self._comment}({stage-1})")
+            logger.debug("found previous file helper")
+        else:
+            prev_file_helper=None
+
+        self.study_file=self.file.get_exp_instance(stage_comment)
+        if not os.path.exists("opts"):
+            os.mkdir("opts")
+        storage_path = self._get_study_path(stage_comment)
+        # do not save storage in diagnose mode
+        if self._diagnose_mode:
+            storage_path=None
+        else:
+            storage_path=f"sqlite:///{storage_path}"
+        
+        self._inf_score=inf_score
+        self._best_trial_score=inf_score
+        self._direction=direction
+        assert direction in ['maximize','minimize'], f"direction must be whether `maximize` or `minimize`, but `{direction}`"
+        study = optuna.create_study(study_name='deadbeef',direction=direction,storage=storage_path,load_if_exists=True)
+
+        finished_trials=set()
+        for trial in study.trials:
+            # if previously we have failed trials, resuming it with correct id
+            if trial.state==optuna.trial.TrialState.FAIL:
+                logger.info(f"found failed trial {trial._trial_id}, resuming")
+                study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+            elif trial.user_attrs['num_epochs']<self._epoch_num:
+                logger.info(f"found unfinished trial {trial._trial_id}, resuming")
+                study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+            elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
+                if 'trial_id' not in trial.user_attrs:
+                    finished_trials.add(trial._trial_id)
+                else:
+                    finished_trials.add(trial.user_attrs['trial_id'])
+        logger.debug(f"found finished trials {finished_trials}. the requested #trials is {n_trials}")
+        if len(finished_trials)==n_trials:
+            logger.warning(f"this study is already finished")
+            logger.warning(
+                f"best hyperparameters\n{show_params_in_3cols(study.best_trial.user_attrs['params'])}"
+            )
+            logger.warning(f"best score: {study.best_value}")
+            return
+        
+        # in diagnose mode, run 1 times only
+        if self._diagnose_mode:
+            n_trials=1
+        
+
+        try:
+            study.optimize(lambda x: self._wrapper_train(x,recipe,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+        except optuna.TrialPruned:
+            pass
+        finally:
+            # post process
+            best_trial=study.best_trial
+            best_params = best_trial.user_attrs['params']
+            best_value = study.best_value
+            logger.warning(f"[BOOPSTRAP] finish optimization of stage `{stage_comment}`")
+            logger.warning(
+                f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
+            )
+            logger.warning(f"[BOOTSTRAP] best score: {best_value}")
+
+            best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
+            target_helper=self.file.get_exp_instance(stage_comment)
+            shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
+            shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
+            logger.info("copied best trial as the final result")
+        
+        logger.warning("[BOOTSTRAP] good luck!")
+
+    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
+        self._hp_manager._set_trial(trial)
+        # process user attrs
+        trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
+        trial.set_user_attr('trial_id',trial_id)
+        trial.set_user_attr('num_epochs',self._epoch_num)
+
+        logger.info(f"this is trial {trial._trial_id}, real id {trial_id}")
+        trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
+        self.staff = ModelStaff(
+            file_helper=trial_file,
+            prev_file_helper=prev_file_helper,
+            dev=self._dev,
+        )
+        recipe._set_staff(self.staff)
+        recipe.prepare(self._hp_manager,self.staff,inherit_states)
+        # set optimizer
+        self.staff._reg_optimizer(recipe.set_optimizers(self.staff._model,self._hp_manager,self.staff))
+        _scheduler=recipe.set_scheduler(self.staff._optimizer,self._hp_manager,self.staff)
+        if _scheduler is not None:
+            self.staff._reg_scheduler(_scheduler)
+        del _scheduler
+
+        best_score=self._inf_score
+        # check diagnose mode
+        if self._diagnose_mode:
+            logger.info("diagnose mode is enabled. run 2 epochs only.")
+            self._epoch_num = 2
+        
+        recovered_epoch=None
+        if self._load_checkpoint:
+            latest_ckpt_path=trial_file.find_latest_checkpoint()
+            if latest_ckpt_path is not None:
+                logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
+            else:
+                logger.info(f"no checkpoint found")
+
+            if self._load_checkpoint and latest_ckpt_path is not None:
+                state=recipe.restore_ckpt(latest_ckpt_path)
+                recovered_epoch=state['cur_epochi']
+                best_score=state['best_score']
+        
+        assert self.staff._get_flag('trainval_data_set'), "train or val set not set"
+        if not self.staff._get_flag('test_data_set'):
+            logger.warning("test set not set. test phase will be skipped.")
+        
+        # create checkpoint dir
+        trial_file.prepare_checkpoint_dir()
+        # create board dir before training
+        tbwriter = SummaryWriter(trial_file.default_board_dir)
+        self._report_info(helper=self.staff,board_dir=tbwriter.log_dir)
+        # append all params (suggested and fixed) into attrs
+        trial.set_user_attr('params',self._hp_manager.params)
+
+        if dist.is_enabled():
+            dist.barrier()
+        logger.warning("ready to train model")
+        for epochi in range(self._epoch_num):
+            self._cur_epochi=epochi
+            if not dist.is_enabled():
+                logger.warning(f"=== START EPOCH {epochi} ===")
             else:
                 logger.warning(
-                    f"=== RANK {dist.get_rank()} START EPOCH {self.cur_epoch} ==="
+                    f"=== RANK {dist.get_rank()} START EPOCH {epochi} ==="
                 )
+            
+            recipe.before_epoch()
+            if recovered_epoch is not None and epochi <= recovered_epoch:
+                recipe.after_epoch()
+                logger.info(f"[HELPER] fast pass epoch {recovered_epoch}")
+                continue
+            
+            self._prepare_dataloader_for_epoch(self.staff._dataloader_train)
+            phase_train=PhaseHelper(
+                "train",
+                self.staff._data_train,
+                self.staff._dataloader_train,
+                dry_run=self._diagnose_mode,
+                custom_probes=self.staff._custom_probes.copy(),
+                dev=self.staff.dev
+            )
+            recipe.run_train_phase(phase_train)
+            phase_train._check_update()
+            self._end_phase(epochi,phase_train)
 
-            if self._ddp_session:
-                assert isinstance(self._dataloader_train.sampler, DistributedSampler)
-                self._dataloader_train.sampler.set_epoch(i)
+            self._prepare_dataloader_for_epoch(self.staff._dataloader_val)
+            phase_val=PhaseHelper(
+                "val",
+                self.staff._data_val,
+                self.staff._dataloader_val,
+                dry_run=self._diagnose_mode,
+                custom_probes=self.staff._custom_probes.copy(),
+                dev=self.staff.dev
+            )
+            recipe.run_val_phase(phase_val)
+            phase_val._check_update()
+            score=phase_val.score
+            self._end_phase(epochi,phase_val)
 
-            yield i
-
-            if self.if_need_save_checkpoint():
-                logger.error("[CHECKPOINT] checkpoint not saved")
-            if self.if_need_save_best_checkpoint():
-                logger.error(
-                    "[CHECKPOINT] best score checkpoint is not saved in previous epoch"
+            if self.staff._get_flag('test_data_set'):
+                self._prepare_dataloader_for_epoch(self.staff._dataloader_test)
+                phase_test=PhaseHelper(
+                    "test",
+                    self.staff._data_test,
+                    self.staff._dataloader_test,
+                    dry_run=self._diagnose_mode,
+                    custom_probes=self.staff._custom_probes.copy(),
+                    dev=self.staff.dev
                 )
-            if self._trigger_state_save:
-                logger.error(
-                    "[CHECKPOINT] state of helper is not saved in previous epoch"
-                )
-                self._trigger_state_save = False
+                recipe.run_train_phase(phase_test)
+                phase_test._check_update()
+                score=phase_test.score
+                self._end_phase(epochi,phase_test)
+            else: phase_test=None
+            recipe.after_epoch()
+            assert type(score)==float
 
-    def phase_train(self):
-        return PhaseHelper(
-            "train",
-            self._data_train,
-            self._dataloader_train,
-            ddp_session=None,
-            dry_run=self._dry_run,
-            exit_callback=self.end_train,
-            custom_probes=self._custom_probes.copy(),
-        )
-
-    def phase_val(self):
-        return PhaseHelper(
-            "val",
-            self._data_val,
-            self._dataloader_val,
-            ddp_session=None,
-            dry_run=self._dry_run,
-            exit_callback=self.end_val,
-            custom_probes=self._custom_probes.copy(),
-        )
-
-    def phase_test(self):
-        need_run = hasattr(self, "_dataloader_test") and self._trigger_run_test
-        self._trigger_run_test = False
-        return PhaseHelper(
-            "test",
-            self._data_test if hasattr(self, "_data_test") else FakeEmptySet(),
-            self._dataloader_test
-            if hasattr(self, "_dataloader_test")
-            else DataLoader(FakeEmptySet()),
-            ddp_session=None,
-            dry_run=self._dry_run,
-            exit_callback=self.end_test,
-            break_phase=not need_run,
-            custom_probes=self._custom_probes.copy(),
-        )
-
-    def end_train(self, phase: PhaseHelper):
-        if self._ddp_session is None:
-            output_dist_probes=phase._output_dist_probes
-        else:
-            gathered_output_dist_probes:List[List[NumericMeter]]=[]
-            dist.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
-            output_dist_probes=gathered_output_dist_probes[0]
-            for i in gathered_output_dist_probes[1:]:
-                for dst,src in zip(output_dist_probes,i):
-                    dst.update(src.val)
-            del gathered_output_dist_probes
-        
-        if self._is_main_process():
-            # assume training loss is sync by user
-            self.tbwriter.add_scalar(
-                "loss/train", phase.loss_probe.average(), self.cur_epoch
-            )
-            self.tbwriter.add_scalar("score/train", phase.score, self.cur_epoch)
-
-            for k,v in enumerate(output_dist_probes):
-                if v.val.numel()>0:
-                    self.tbwriter.add_histogram(f"outdist/train/{k}",v.val,self.cur_epoch)
-
-            # sync of custom probes is done by users
-            # TODO: but this can be done by us if necessary
-            for k in self._custom_probes:
-                if phase.custom_probes[k].has_data():
-                    self.tbwriter.add_scalar(
-                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
-                    )
-                    logger.info(
-                        f"[TRAIN_CPROBES] {k}: {phase.custom_probes[k].average()}"
-                    )
-        
-        self._last_test_score=phase.score
-        self._last_test_loss=phase.loss_probe.average()
-        if not self._ddp_session:
-            logger.warning(
-                f"|| END_TRAIN {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
-            )
-        else:
-            logger.warning(
-                f"|| RANK {dist.get_rank()} END_TRAIN {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
-            )
-
-    def end_val(self, phase: PhaseHelper):
-        if self._ddp_session is None:
-            output_dist_probes=phase._output_dist_probes
-        else:
-            gathered_output_dist_probes:List[List[NumericMeter]]=[]
-            dist.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
-            output_dist_probes=gathered_output_dist_probes[0]
-            for i in gathered_output_dist_probes[1:]:
-                for dst,src in zip(output_dist_probes,i):
-                    dst.update(src.val)
-            del gathered_output_dist_probes
-
-        if self._is_main_process():
-            # validation phase is full and run duplicated on every processes, including main process
-            self.tbwriter.add_scalar(
-                "loss/val", phase.loss_probe.average(), self.cur_epoch
-            )
-            self.tbwriter.add_scalar("score/val", phase.score, self.cur_epoch)
-
-            for k,v in enumerate(output_dist_probes):
-                if v.val.numel()>0:
-                    self.tbwriter.add_histogram(f"outdist/val/{k}",v.val,self.cur_epoch)
-
-            # sync of custom probes is done by users
-            # TODO: but this can be done by us if necessary
-            for k in self._custom_probes:
-                if phase.custom_probes[k].has_data():
-                    self.tbwriter.add_scalar(
-                        f"{k}/val", phase.custom_probes[k].average(), self.cur_epoch
-                    )
-                    logger.info(
-                        f"[VAL_CPROBES] {k}: {phase.custom_probes[k].average()}"
-                    )
-
-            logger.warning(
-                f"|| END_VAL {self.cur_epoch} - loss {phase.loss_probe.average()}, score {phase.score}"
-            )
-            logger.warning(
-                f"||| END EPOCH {self.cur_epoch} TRAIN/VAL - loss {self._last_test_loss}/{phase.loss_probe.average()}, score {self._last_test_score}/{phase.score} |||"
-            )
-
-        if phase.score >= self._best_val_score:
-            self._best_val_score = phase.score
-            self._trigger_run_test = True
-            # TODO: this ?
-            if self._enable_checkpoint:
-                self._trigger_best_score = True
-                self._trigger_state_save = True
-
-    def end_test(self, phase: PhaseHelper):
-        if self._ddp_session is None:
-            output_dist_probes=phase._output_dist_probes
-        else:
-            gathered_output_dist_probes:List[List[NumericMeter]]=[]
-            dist.gather_object(phase._output_dist_probes,gathered_output_dist_probes,0)
-            output_dist_probes=gathered_output_dist_probes[0]
-            for i in gathered_output_dist_probes[1:]:
-                for dst,src in zip(output_dist_probes,i):
-                    dst.update(src.val)
-            del gathered_output_dist_probes
-
-        if self._is_main_process():
-            self.tbwriter.add_scalar(
-                "loss/test", phase.loss_probe.average(), self.cur_epoch
-            )
-            self.tbwriter.add_scalar("score/test", phase.score, self.cur_epoch)
-
-            for k,v in enumerate(output_dist_probes):
-                if v.val.numel()>0:
-                    self.tbwriter.add_histogram(f"outdist/test/{k}",v.val,self.cur_epoch)
-
-            # sync of custom probes is done by users
-            # TODO: but this can be done by us if necessary
-            for k in self._custom_probes:
-                if phase.custom_probes[k].has_data():
-                    self.tbwriter.add_scalar(
-                        f"{k}/train", phase.custom_probes[k].average(), self.cur_epoch
-                    )
-                    logger.info(
-                        f"[TEST_CPROBES] {k}: {phase.custom_probes[k].average()}"
-                    )
-            logger.warning(
-                f"|| END_TEST {self.cur_epoch} - {phase.loss_probe.average()}, score {phase.score}"
-            )
-
-    @staticmethod
-    def auto_bind_and_run(func):
-        logger.remove()
-        logger.add(sys.stderr,format=LOGGER_FORMAT)
-        temp = logger.add(f"log.log",format=LOGGER_FORMAT)
-
-        sig = inspect.signature(func)
-        params = sig.parameters
-        parser = argparse.ArgumentParser(description="TrainHelper")
-        for param_name, param in params.items():
-            if param.default != inspect.Parameter.empty:
-                parser.add_argument(
-                    f"--{param_name}", default=param.default, type=param.annotation
+            # output final result of this epoch
+            loss_msg=[
+                phase_train.loss_probe.average(),
+                phase_val.loss_probe.average(),
+                phase_test.loss_probe.average() if phase_test else 0
+            ]
+            score_msg=[
+                phase_train.score,
+                phase_val.score,
+                phase_test.score if phase_test else 0
+            ]
+            if not dist.is_enabled():
+                logger.warning(
+                    f"=== END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
                 )
             else:
-                parser.add_argument(
-                    f"--{param_name}", type=param.annotation, required=True
+                logger.warning(
+                    f"=== RANK {dist.get_rank()} END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
                 )
 
-        args = vars(parser.parse_args())
-
-        active_results = {}
-        name,val,changed=[],[],[]
-        for param_name, param in params.items():
-            env_input = args[param_name]
-            if env_input != param.default:
-                active_results[param_name] = env_input
-                name.append(f"*{param_name}")
-                val.append(env_input)
+            # check if ckpt is need
+            need_save_period = epochi % self._checkpoint_save_period == 0
+            
+            if (self._direction=='maximize' and score >= best_score) or (self._direction=='minimize' and score <=best_score):
+                best_score=score
+                need_save_best=True
             else:
-                assert (
-                        param.default != inspect.Parameter.empty
-                ), f"you did not set parameter `{param_name}`"
-                active_results[param_name] = param.default
-                name.append(f"{param_name}")
-                val.append(param.default)
+                need_save_best=False
+            if dist.is_main_process() and self._save_checkpoint:
+                # force saving ckpt in diagnose mode
+                if self._diagnose_mode:
+                    need_save_best=True
+                    need_save_period=True
+                state={
+                    'cur_epochi':epochi,
+                    'best_score':best_score,
+                }
+                if need_save_period:recipe.save_ckpt(trial_file.get_checkpoint_slot(epochi),extra_state=state)
+                if need_save_best:recipe.save_ckpt(trial_file.get_best_checkpoint_slot(),extra_state=state)
+            if dist.is_enabled():
+                dist.barrier()
+            
+            trial.report(score,epochi)
+            # early stop
+            if self._enable_prune and trial.should_prune():
+                raise optuna.TrialPruned()
+            
+            instant_cmd=self._check_instant_cmd()
+            if instant_cmd=='prune':
+                logger.warning("breaking epoch")
+                break
+            elif instant_cmd=='pdb':
+                logger.warning("entering pdb")
+                pdb.set_trace()
         
-        while len(name)%3!=0:
-            name.append('')
-            val.append('')
-        col_len=len(name)//3
-        table=PrettyTable()
-        table.set_style(PLAIN_COLUMNS)
-        for i in range(3):
-            table.add_column("params",name[i*col_len:(i+1)*col_len],"l")
-            table.add_column("values",val[i*col_len:(i+1)*col_len],"c")
-        logger.warning(f"[CPARAMS]\n{table}")
+        self._latest_states=recipe.end(self.staff)
         
-        logger.remove(temp)
-        func(**active_results)
+        return best_score
+    
+    def _prepare_dataloader_for_epoch(self,dataloader:DataLoader):
+        if isinstance(dataloader.sampler,DistributedSampler):
+            dataloader.sampler.set_epoch(self._cur_epochi)
+    
+    def _hook_trial_end(self,study: optuna.study.Study, trial: optuna.trial.FrozenTrial):
+        if trial.state==optuna.trial.TrialState.PRUNED:
+            return
+        assert trial.value is not None
+        if trial.value>=self._best_trial_score:
+            self._best_trial_score=trial.value
+            self._inherit_states=self._latest_states
+            logger.info("update inherit states")
+        del self._latest_states
+    
+    def _end_phase(self,epochi:int,phase:PhaseHelper):
+        if not dist.is_enabled():
+            for k,v in phase.custom_probes.items():
+                logger.info(f"|| {k}: {v.average()}")
+
+            logger.info(
+                f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+            )
+        else:
+            logger.info(
+                f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+            )
+    
+    def _check_instant_cmd(self):
+        logger.debug("checking instant cmd")
+        if os.path.exists('instant_cmd'):
+            with open('instant_cmd','r') as f:
+                full_cmd=f.read().strip()
+            os.remove('instant_cmd')
+            if full_cmd in ['prune','pdb']:
+                logger.warning(f"received command `{full_cmd}`")
+                return full_cmd
+            else:
+                logger.warning(f"unknown command '{full_cmd}'")
+                return None
+        else:
+            return None
+    
+    def get_test_pack(self,recipe:ModuleRecipe,stage:Optional[int]=None):
+        stage_comment=self._get_comment(stage)
+        study = optuna.create_study(study_name='deadbeef',storage=f"sqlite:///{self._get_study_path(stage_comment)}",load_if_exists=True)
+        best_trial=study.best_trial
+        self._hp_manager.load_params(best_trial.user_attrs['params'])
+
+        best_file=self.file.get_exp_instance(stage_comment)
+        staff = ModelStaff(
+            file_helper=best_file,
+            prev_file_helper=None,
+            dev=self._dev,
+        )
+        recipe._set_staff(staff)
+        recipe.prepare(self._hp_manager,self.staff,{})
+
+
+        
+        raise NotImplementedError()
+
+
 
 
 def gettype(name):

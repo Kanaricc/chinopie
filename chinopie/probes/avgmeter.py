@@ -1,18 +1,26 @@
 from torch import Tensor
 import torch
 from torch.types import Number
+from collections import deque
 
-class NumericMeter:
-    def __init__(self,name: str) -> None:
-        self._name=name
-        self._list=torch.zeros(0)
+class SmoothMeanMeter:
+    def __init__(self,length:int,level1:float=0.1,level2:float=0.25,level3:float=0.5) -> None:
+        self._levels=[level1*length,level2*length,level3*length]
+        self._qs=[deque(maxlen=int(x)) for x in self._levels]
     
-    def update(self, val:Tensor):
-        self._list=torch.cat([self._list,val.detach().cpu().flatten()])
+    def add(self,x:float):
+        for q in self._qs:
+            q.append(x)
     
-    @property
-    def val(self):
-        return self._list
+    def _sync_dist_nodes(self):
+        raise NotImplemented
+
+    def __str__(self):
+        res=[]
+        for q in self._qs:
+            t=torch.tensor(list(q),dtype=torch.float)
+            res.append(t.mean().item())
+        return ', '.join(map(lambda x: f"{x:.2f}",res))
 
 class AverageMeter:
     def __init__(self, name: str) -> None:
@@ -22,6 +30,9 @@ class AverageMeter:
         self._cnt = 0
         self._avg=0
         pass
+
+    def _sync_dist_nodes(self):
+        raise NotImplemented
 
     def update(self, val: Number, n=1):
         self._val = val
