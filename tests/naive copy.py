@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-from chinopie import TrainHelper,ModuleRecipe
+from chinopie import ModelStaff,ModuleRecipe
 from chinopie.modelhelper import TrainBootstrap
 from chinopie.datasets.fakeset import FakeRandomSet
 
@@ -26,7 +26,7 @@ class Recipe1(ModuleRecipe):
         super().__init__()
     
     
-    def prepare(self, helper: TrainHelper):
+    def prepare(self, helper: ModelStaff):
         trainset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         valset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         testset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
@@ -39,7 +39,7 @@ class Recipe1(ModuleRecipe):
         model=Model()
         helper.reg_model(model)
 
-    def set_optimizers(self, model:Model, helper: TrainHelper) -> Optimizer:
+    def set_optimizers(self, model:Model, helper: ModelStaff) -> Optimizer:
         return torch.optim.AdamW(model.parameters(),lr=helper.suggest_float('lr',1e-5,1e-1,log=True))
     
     def forward(self, data) -> Tensor:
