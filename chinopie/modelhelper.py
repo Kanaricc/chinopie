@@ -468,11 +468,11 @@ class TrainBootstrap:
             if trial.state==optuna.trial.TrialState.FAIL:
                 logger.info(f"found failed trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
-                resumed_trials.add({trial.user_attrs['trial_id']})
+                resumed_trials.add(trial.user_attrs['trial_id'])
             elif trial.user_attrs['num_epochs']<self._epoch_num:
                 logger.info(f"found unfinished trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
-                resumed_trials.add({trial.user_attrs['trial_id']})
+                resumed_trials.add(trial.user_attrs['trial_id'])
             elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
                 finished_trials.add(trial.user_attrs['trial_id'])
         logger.debug(f"found finished trials {finished_trials}. the requested #trials is {n_trials}")
