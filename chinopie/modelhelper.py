@@ -459,22 +459,25 @@ class TrainBootstrap:
         study = optuna.create_study(study_name='deadbeef',direction=direction,storage=storage_path,load_if_exists=True)
 
         finished_trials=set()
+        resumed_trials=set()
         for trial in study.trials:
+            if trial.user_attrs['trial_id'] in resumed_trials:
+                logger.info(f"skip trial {trial._trial_id} in resumed trials")
+                continue
             # if previously we have failed trials, resuming it with correct id
             if trial.state==optuna.trial.TrialState.FAIL:
-                logger.info(f"found failed trial {trial._trial_id}, resuming")
+                logger.info(f"found failed trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+                resumed_trials.add({trial.user_attrs['trial_id']})
             elif trial.user_attrs['num_epochs']<self._epoch_num:
-                logger.info(f"found unfinished trial {trial._trial_id}, resuming")
+                logger.info(f"found unfinished trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+                resumed_trials.add({trial.user_attrs['trial_id']})
             elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
-                if 'trial_id' not in trial.user_attrs:
-                    finished_trials.add(trial._trial_id)
-                else:
-                    finished_trials.add(trial.user_attrs['trial_id'])
+                finished_trials.add(trial.user_attrs['trial_id'])
         logger.debug(f"found finished trials {finished_trials}. the requested #trials is {n_trials}")
         if len(finished_trials)==n_trials:
-            logger.warning(f"this study is already finished")
+            logger.warning(f"this study `{stage_comment}` is already finished")
             logger.warning(
                 f"best hyperparameters\n{show_params_in_3cols(study.best_trial.user_attrs['params'])}"
             )
