@@ -58,11 +58,13 @@ class ModuleRecipe(ABC):
     
     
     def switch_train(self,model:nn.Module):
-        # TODO: check consistency
+        if model.training:
+            logger.warning("wrong model mode detected: expected model in eval mode but found train mode.")
         chinopie.set_train(model)
     
     def switch_eval(self,model:nn.Module):
-        # TODO: check consistency
+        if not model.training:
+            logger.warning("wrong model mode detected: expected model in train mode but found eval mode.")
         chinopie.set_eval(model)
     
     def run_train_phase(self,p:PhaseHelper):
@@ -86,8 +88,8 @@ class ModuleRecipe(ABC):
     
     def run_train_iter(self,data,p:PhaseHelper):
         dev_data=chinopie.any_to(data,self.dev)
-        output=self.forward(dev_data)
-        loss=self.cal_loss(dev_data,output)
+        output=self.forward_train(dev_data)
+        loss=self.cal_loss_train(dev_data,output)
         p.update_loss(loss.detach().cpu())
 
         self.optimizer.zero_grad()
@@ -97,28 +99,49 @@ class ModuleRecipe(ABC):
         self.optimizer.step()
         self.update_probe(data,chinopie.any_to(output,'cpu'),p)
         self.after_iter(dev_data,output,'train')
-    
+
+
     def run_val_iter(self,data,p:PhaseHelper):
+        self.before_iter(data,'test')
         with torch.no_grad():
             dev_data=chinopie.any_to(data,self.dev)
-            output=self.forward(dev_data)
-            loss=self.cal_loss(dev_data,output)
+            output=self.forward_val(dev_data)
+            loss=self.cal_loss_val(dev_data,output)
             p.update_loss(loss.detach().cpu())
             self.update_probe(data,chinopie.any_to(output,'cpu'),p)
         self.after_iter(dev_data,output,'val')
     
     def run_test_iter(self,data,p:PhaseHelper):
+        self.before_iter(data,'test')
         with torch.no_grad():
             dev_data=chinopie.any_to(data,self.dev)
-            output=self.forward(dev_data)
-            loss=self.cal_loss(dev_data,output)
+            output=self.forward_test(dev_data)
+            loss=self.cal_loss_test(dev_data,output)
             p.update_loss(loss.detach().cpu())
             self.update_probe(data,chinopie.any_to(output,'cpu'),p)
         self.after_iter(dev_data,output,'test')
     
+    def forward_train(self,data)->Any:
+        return self.forward(data)
+
+    def forward_val(self,data)->Any:
+        return self.forward(data)
+
+    def forward_test(self,data)->Any:
+        return self.forward(data)
+
     @abstractmethod
     def forward(self,data)->Any:
         raise NotImplemented
+    
+    def cal_loss_train(self,data,output)->Tensor:
+        return self.cal_loss(data,output)
+
+    def cal_loss_val(self,data,output)->Tensor:
+        return self.cal_loss(data,output)
+
+    def cal_loss_test(self,data,output)->Tensor:
+        return self.cal_loss(data,output)
     
     @abstractmethod
     def cal_loss(self,data,output)->Tensor:
@@ -130,6 +153,8 @@ class ModuleRecipe(ABC):
         """
         pass
 
+    def before_iter(self,data,phase:str):
+        ...
     
     def after_iter(self,data,output,phase:str):
         """
@@ -189,4 +214,3 @@ class ModuleRecipe(ABC):
         """
         if self.scheduler is not None:
             self.scheduler.step()
-                
