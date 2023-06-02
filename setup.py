@@ -12,4 +12,12 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=setuptools.find_packages(),
+    requires=[
+        "prettytable",
+        "gitpython",
+        "loguru",
+        "tqdm",
+        "optuna",
+        "numpy",
+    ]
 )
