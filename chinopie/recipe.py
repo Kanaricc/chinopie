@@ -94,8 +94,10 @@ class ModuleRecipe(ABC):
         if self._clamp_grad is not None:
             torch.nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(),max_norm=self._clamp_grad)
         self.optimizer.step()
-        self.update_probe(data,chinopie.any_to(output,'cpu'),p)
-        self.after_iter(dev_data,output,'train')
+
+        output_cpu=chinopie.any_to(output,'cpu')
+        self.update_probe(data,output_cpu,p)
+        self.after_iter(data,output_cpu,'train')
 
 
     def run_val_iter(self,data,p:PhaseHelper):
@@ -106,7 +108,9 @@ class ModuleRecipe(ABC):
             loss=self.cal_loss_val(dev_data,output)
             p.update_loss(loss.detach().cpu())
             self.update_probe(data,chinopie.any_to(output,'cpu'),p)
-        self.after_iter(dev_data,output,'val')
+        
+        output_cpu=chinopie.any_to(output,'cpu')
+        self.after_iter(data,output_cpu,'val')
     
     def run_test_iter(self,data,p:PhaseHelper):
         self.before_iter(data,'test')
@@ -116,7 +120,9 @@ class ModuleRecipe(ABC):
             loss=self.cal_loss_test(dev_data,output)
             p.update_loss(loss.detach().cpu())
             self.update_probe(data,chinopie.any_to(output,'cpu'),p)
-        self.after_iter(dev_data,output,'test')
+        
+        output_cpu=chinopie.any_to(output,'cpu')
+        self.after_iter(data,output_cpu,'test')
     
     def forward_train(self,data)->Any:
         return self.forward(data)
