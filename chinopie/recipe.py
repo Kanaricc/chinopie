@@ -12,8 +12,9 @@ from chinopie.modelhelper import ModelStaff,PhaseHelper,HyperparameterManager
 
 
 class ModuleRecipe(ABC):
-    def __init__(self, clamp_grad:Optional[float]=None):
+    def __init__(self, clamp_grad:Optional[float]=None,eval_on_nograd_module:bool=True):
         self._clamp_grad=clamp_grad
+        self._eval_on_nograd_module=eval_on_nograd_module
         pass
 
 
@@ -58,13 +59,9 @@ class ModuleRecipe(ABC):
     
     
     def switch_train(self,model:nn.Module):
-        if model.training:
-            logger.warning("wrong model mode detected: expected model in eval mode but found train mode.")
-        chinopie.set_train(model)
+        chinopie.set_train(model,self._eval_on_nograd_module)
     
     def switch_eval(self,model:nn.Module):
-        if not model.training:
-            logger.warning("wrong model mode detected: expected model in train mode but found eval mode.")
         chinopie.set_eval(model)
     
     def run_train_phase(self,p:PhaseHelper):
@@ -149,7 +146,7 @@ class ModuleRecipe(ABC):
     
     def update_probe(self,data,output,p:PhaseHelper):
         """
-        managed custom probe are supposed to be updated here
+        update managed custom probe here
         """
         pass
 
@@ -158,7 +155,7 @@ class ModuleRecipe(ABC):
     
     def after_iter(self,data,output,phase:str):
         """
-        unmanaged probes are supposed to be updated here
+        update unmanaged probes here
         """
         ...
     
