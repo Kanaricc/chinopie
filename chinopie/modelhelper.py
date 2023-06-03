@@ -347,9 +347,6 @@ class TrainBootstrap:
         if seed is not None:
             self.set_fixed_seed(seed)
         
-        # prepare hyperparameter manager
-        self._hp_manager=HyperparameterManager()
-        
         self._inherit_states:Dict[str,Any]={}
     
     @property
@@ -432,6 +429,8 @@ class TrainBootstrap:
     def optimize(
         self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int, stage:Optional[int]=None,
     ):
+        # prepare hyperparameter manager
+        self._hp_manager=HyperparameterManager()
         self._flush_params()
                 
         stage_comment=self._get_comment(stage)
