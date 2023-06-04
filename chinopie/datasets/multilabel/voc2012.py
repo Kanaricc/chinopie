@@ -13,11 +13,12 @@ from torch.utils.data.dataset import Dataset
 from torchvision import transforms
 from torch import nn
 import torch.nn.functional as F
-from loguru import logger
+
 
 from .. import download_with_progress,extract_zip
 from . import MultiLabelLocalDataset
-
+from ... import logging
+_logger=logging.get_logger(__name__)
 
 DATA_URL = "http://host.robots.ox.ac.uk/pascal/VOC/voc2012/VOCtrainval_11-May-2012.tar"
 TEST_DATA_URL = "http://pjreddie.com/media/files/VOC2012test.tar"
@@ -67,21 +68,21 @@ def prepare_voc12(root: str,ignore_difficult_label:bool=True):
     cached_tv_file = os.path.join(tmp_dir, "VOCtrainval_11-May-2012.tar")
     cached_test_file = os.path.join(tmp_dir, "VOC2012test.tar")
     if not os.path.exists(cached_tv_file):
-        logger.warning(f"downloading voc12 trainval dataset")
+        _logger.warning(f"downloading voc12 trainval dataset")
         download_with_progress(DATA_URL,cached_tv_file)
-        logger.warning("done")
+        _logger.warning("done")
     if not os.path.exists(cached_test_file):
-        logger.warning(f"downloading voc12 test dataset")
+        _logger.warning(f"downloading voc12 test dataset")
         download_with_progress(TEST_DATA_URL,cached_test_file)
-        logger.warning("done")
+        _logger.warning("done")
 
     extracted_dir = os.path.join(tmp_dir, "extracted")
     if not os.path.exists(extracted_dir):
-        logger.warning(f"extracting dataset")
+        _logger.warning(f"extracting dataset")
         os.mkdir(extracted_dir)
         extract_zip(cached_tv_file,extracted_dir)
         extract_zip(cached_test_file,extracted_dir)
-        logger.warning("done")
+        _logger.warning("done")
 
     vocdevkit = os.path.join(extracted_dir, "VOCdevkit", "VOC2012")
     anno_path=os.path.join(vocdevkit, "Annotations")
@@ -89,20 +90,20 @@ def prepare_voc12(root: str,ignore_difficult_label:bool=True):
 
     img_dir = os.path.join(root, "img")
     if not os.path.exists(img_dir):
-        logger.warning(f"refactor images dir structure")
+        _logger.warning(f"refactor images dir structure")
         assert os.path.exists(os.path.join(vocdevkit, "JPEGImages"))
         shutil.move(os.path.join(vocdevkit,'JPEGImages'),img_dir)
-        logger.warning("done")
+        _logger.warning("done")
 
     cat_json = os.path.join(root, "categories.json")
     if not os.path.exists(cat_json):
-        logger.warning(f"dumping categories mapping relations")
+        _logger.warning(f"dumping categories mapping relations")
         json.dump(LABEL2ID, open(cat_json, "w"))
-        logger.warning("done")
+        _logger.warning("done")
 
     anno_json = os.path.join(root, "annotations_train.json")
     if not os.path.exists(anno_json):
-        logger.warning(f"generating annotations json")
+        _logger.warning(f"generating annotations json")
         labels_dir = os.path.join(vocdevkit, "ImageSets", "Main")
 
         warning_ignorance=False
@@ -144,7 +145,7 @@ def prepare_voc12(root: str,ignore_difficult_label:bool=True):
                                     img_annotations[image_id].append(LABEL2ID[label])
                                 else:
                                     if not warning_ignorance:
-                                        logger.debug(f"label like `{label}` will be ignored in `{image_id}` since it's tagged difficult.")
+                                        _logger.debug(f"label like `{label}` will be ignored in `{image_id}` since it's tagged difficult.")
                                         warning_ignorance=True
                             else:
                                 img_annotations[image_id].append(LABEL2ID[label])
@@ -162,7 +163,7 @@ def prepare_voc12(root: str,ignore_difficult_label:bool=True):
             json_file = os.path.join(root, f"annotations_{phase}.json")
             json.dump(anno, open(json_file, "w"))
 
-        logger.warning("done")
+        _logger.warning("done")
 
 
 class VOC2012Dataset(MultiLabelLocalDataset):
@@ -176,7 +177,7 @@ class VOC2012Dataset(MultiLabelLocalDataset):
             cat2id = json.load(f)
 
 
-        logger.warning(
+        _logger.warning(
             f"[VOC2012] load num of classes {len(cat2id)}, num images {len(img_list)}"
         )
 

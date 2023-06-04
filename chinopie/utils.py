@@ -8,11 +8,13 @@ import numpy as np
 import torch
 from prettytable import PrettyTable,PLAIN_COLUMNS
 from git.repo import Repo
-from loguru import logger
 from torch import nn,Tensor
 
+from . import logging
+_logger=logging.get_logger(__name__)
+
 def set_fixed_seed(seed:Any):
-    logger.info("fixed seed set for random, torch, and numpy")
+    _logger.info("fixed seed set for random, torch, and numpy")
     os.environ["PYTHONHASHSEED"] = str(seed)
     random.seed(seed)
 
@@ -77,12 +79,12 @@ def create_snapshot(comment:Optional[str]=None):
 
 def check_gitignore(additional_list:List[str]=[]):
     if not os.path.exists('.gitignore'):
-        logger.warning("no gitignore found. try creating one.")
+        _logger.warning("no gitignore found. try creating one.")
         with open('.gitignore','w') as f:
             pass
     with open('.gitignore','r') as f:
         ignore_list=list(map(lambda x:x.strip(),f.readlines()))
-    logger.trace(f"read .gitignore: {ignore_list}")
+    _logger.debug(f"read .gitignore: {ignore_list}")
     
     check_list=[
         "/logs",
@@ -97,8 +99,8 @@ def check_gitignore(additional_list:List[str]=[]):
                     has_newline=True
                 f.write(item)
                 f.write("\n")
-                logger.warning(f"`{item}` not found in .gitignore. appended it.")
-    logger.info(".gitignore ignored logs and opts correctly")
+                _logger.warning(f"`{item}` not found in .gitignore. appended it.")
+    _logger.info(".gitignore ignored logs and opts correctly")
 
 def show_params_in_3cols(params:Optional[Dict[str,Any]]=None,name:Optional[List[str]]=None,val:Optional[List[Any]]=None):
     if params!=None:

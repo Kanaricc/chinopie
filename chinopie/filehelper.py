@@ -3,7 +3,8 @@ from typing import Optional,List
 from datetime import datetime
 
 from . import iddp as dist
-from loguru import logger
+from . import logging
+_logger=logging.get_logger(__name__)
 import pathlib
 
 
@@ -31,9 +32,9 @@ class GlobalFileHelper:
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
         if dist.is_enabled():
-            logger.debug("found initialized ddp session")
+            _logger.debug("found initialized ddp session")
             dist.barrier()
-            logger.debug("waited for filehelper distributed initialization")
+            _logger.debug("waited for filehelper distributed initialization")
         
         self._instance_files:List[InstanceFileHelper]=[]
     
@@ -75,9 +76,9 @@ class InstanceFileHelper:
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
         if dist.is_enabled():
-            logger.debug("found initialized ddp session")
+            _logger.debug("found initialized ddp session")
             dist.barrier()
-            logger.debug("waited for filehelper distributed initialization")
+            _logger.debug("waited for filehelper distributed initialization")
 
         self.ckpt_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
         # self.board_dir = os.path.join(
@@ -134,21 +135,21 @@ class InstanceFileHelper:
 
     def get_initparams_slot(self) -> str:
         if not dist.is_main_process():
-            logger.warning("[DDP] try to get checkpoint slot on follower")
-        logger.info("[INIT] you have ask for initialization slot")
+            _logger.warning("[DDP] try to get checkpoint slot on follower")
+        _logger.info("[INIT] you have ask for initialization slot")
         filename = f"init.pth"
         return os.path.join(self.ckpt_dir, filename)
 
     def get_checkpoint_slot(self, cur_epoch: int) -> str:
         if not dist.is_main_process():
-            logger.warning("[DDP] try to get checkpoint slot on follower")
+            _logger.warning("[DDP] try to get checkpoint slot on follower")
         filename = f"checkpoint-{cur_epoch}.pth"
         return os.path.join(self.ckpt_dir, filename)
     
 
     def get_best_checkpoint_slot(self) -> str:
         if not dist.is_main_process():
-            logger.warning("[DDP] try to get checkpoint slot on follower")
+            _logger.warning("[DDP] try to get checkpoint slot on follower")
         return os.path.join(self.ckpt_dir, "best.pth")
     
     @property

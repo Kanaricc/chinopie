@@ -6,12 +6,13 @@ from typing_extensions import Self
 import torch
 from torch.utils.data import DataLoader
 from torch import Tensor
-from loguru import logger
 from tqdm import tqdm
 
 from .probes import AverageMeter,SmoothMeanMeter
 from . import iddp as dist
 from .utils import any_to
+from . import logging
+_logger=logging.get_logger(__name__)
 
 class FunctionalSection:
     class JumpSectionException(Exception):
@@ -80,19 +81,19 @@ class PhaseHelper:
         one_percent_len=max(1,(batch_len+25-1)//25)
         if dist.is_main_process():
             if self._dry_run:
-                logger.info("data preview can be found in log")
+                _logger.info("data preview can be found in log")
             with tqdm(total=batch_len,dynamic_ncols=True) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._dry_run:
                         torch.set_printoptions(profile='full')
-                        logger.debug(data)
+                        _logger.debug(data)
                         torch.set_printoptions(profile='default')
                     yield batchi, data
                     progressbar.update()
                     postfix={'loss':str(self._realtime_loss_probe)}
                     progressbar.set_postfix(postfix)
                     if batchi%one_percent_len==0:
-                        logger.debug(f"progress {batchi}/{batch_len}: {postfix}")
+                        _logger.debug(f"progress {batchi}/{batch_len}: {postfix}")
                     if self._dry_run and batchi>=2:
                         break
         else:
@@ -103,12 +104,12 @@ class PhaseHelper:
     
     def _check_update(self):
         if not self._score_updated:
-            logger.error(f"no score updated during phase {self._phase_name}")
+            _logger.error(f"no score updated during phase {self._phase_name}")
         if not self._loss_updated:
-            logger.error(f"no loss updated during phase {self._phase_name}")
+            _logger.error(f"no loss updated during phase {self._phase_name}")
 
         for name in self._custom_probe_name:
-            logger.error(f"{name} not updated during phase {self._phase_name}")
+            _logger.error(f"{name} not updated during phase {self._phase_name}")
 
     def update_probe(self, name: str, value: float, n: int = 1):
         if name in self._custom_probe_name:

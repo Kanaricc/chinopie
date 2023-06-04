@@ -1,5 +1,4 @@
 # sample execution (requires torchvision)
-from loguru import logger
 from typing import List
 import torch
 import numpy as np

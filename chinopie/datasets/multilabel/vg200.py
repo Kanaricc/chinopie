@@ -8,7 +8,9 @@ from PIL import Image
 import torch
 from torchvision import transforms
 import torch.nn.functional as F
-from loguru import logger
+
+from ... import logging
+_logger=logging.get_logger(__name__)
 
 URLS = {
     "train_img": "http://images.cocodataset.org/zips/train2014.zip",
@@ -49,7 +51,7 @@ class COCO2014Dataset(Dataset):
 
         prepare_coco2014(root, phase)
         self.load_annotation()
-        logger.info(
+        _logger.info(
             f"[dataset] COCO2014 classification {phase} phase, {self.num_classes} classes, {len(self.img_list)} images"
         )
     

@@ -4,7 +4,6 @@ import warnings
 from typing import Any,List,Tuple,Sequence
 from torch.utils.data import Dataset
 import torchvision.transforms.functional as F
-from loguru import logger
 
 class RandomResizedCropAndInterpolation:
     """Crop the given PIL Image to random size and aspect ratio with random interpolation.

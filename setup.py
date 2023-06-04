@@ -15,7 +15,6 @@ setuptools.setup(
     requires=[
         "prettytable",
         "gitpython",
-        "loguru",
         "tqdm",
         "optuna",
         "numpy",

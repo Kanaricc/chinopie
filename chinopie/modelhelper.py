@@ -1,4 +1,5 @@
 from datetime import datetime
+import logging
 import os, sys, shutil,pdb
 import argparse
 import random
@@ -18,7 +19,6 @@ from torch.optim.lr_scheduler import LRScheduler
 import optuna
 from optuna.distributions import CategoricalChoiceType
 import numpy as np
-from loguru import logger
 
 from .probes.avgmeter import AverageMeter
 from .datasets.fakeset import FakeEmptySet
@@ -28,41 +28,42 @@ from .phasehelper import (
     PhaseHelper,
 )
 from .utils import show_params_in_3cols,create_snapshot,check_gitignore,set_fixed_seed
+from .logging import get_logger,set_logger_file,set_verbosity
 
-# LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{file}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>"
-LOGGER_FORMAT = "<green>{time:MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+logger=get_logger(__name__)
 
 class HyperparameterManager:
     def __init__(self) -> None:
-        self._param_config:Dict[str,Optional[Any]]={}
+        self._param_config:Dict[str,Any]={}
+        self._arg_config:Dict[str,Optional[Any]]={}
         self._arg_parser=argparse.ArgumentParser()
 
         self._fixed=False
     
     def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
         assert self._fixed==False, "cannot reg new parameter after fixed"
-        if name not in self._param_config:
+        if name not in self._arg_config:
             self._arg_parser.add_argument(f"--{name}",required=False)
-            self._param_config[name] = value
+            self._arg_config[name] = value
 
     def reg_int(self, name: str, value: Optional[int] = None):
         assert self._fixed==False, "cannot reg new parameter after fixed"
-        if name not in self._param_config:
+        if name not in self._arg_config:
             self._arg_parser.add_argument(f"--{name}",type=int,required=False)
-            self._param_config[name] = value
+            self._arg_config[name] = value
 
     def reg_float(self, name: str, value: Optional[float] = None):
         assert self._fixed==False, "cannot reg new parameter after fixed"
-        if name not in self._param_config:
+        if name not in self._arg_config:
             self._arg_parser.add_argument(f"--{name}",type=float,required=False)
-            self._param_config[name] = value
+            self._arg_config[name] = value
     
     def parse_args(self,raw_args:List[str]):
         args=self.arg_parser.parse_args(raw_args)
         logger.debug(f"hyperparameters in argparser: {args}")
-        for k in self._param_config.keys():
+        for k in self._arg_config.keys():
             if getattr(args,k) is not None:
-                self._param_config[k]=getattr(args,k)
+                self._arg_config[k]=getattr(args,k)
                 logger.debug(f"flushed `{k}`")
     
     def load_params(self,val:Dict[str,Any]):
@@ -70,14 +71,15 @@ class HyperparameterManager:
     
     def _set_trial(self,trial:optuna.Trial):
         self._trial=trial
+        self._param_config.clear() # clear params for next trial
         self._fixed=True
         
     
     def suggest_category(
         self, name: str, choices: Sequence[CategoricalChoiceType]
     ) -> CategoricalChoiceType:
-        assert name in self._param_config, f"request for unregisted param `{name}`"
-        fixed_val = self._param_config[name]
+        assert name in self._arg_config, f"request for unregisted param `{name}`"
+        fixed_val = self._arg_config[name]
         if fixed_val is not None:
             assert fixed_val in choices
             logger.debug(f"using fixed param `{name}`")
@@ -88,8 +90,8 @@ class HyperparameterManager:
             return self._param_config[name]
 
     def suggest_int(self, name: str, low: int, high: int, step=1, log=False) -> int:
-        assert name in self._param_config, f"request for unregisted param `{name}`"
-        fixed_val = self._param_config[name]
+        assert name in self._arg_config, f"request for unregisted param `{name}`"
+        fixed_val = self._arg_config[name]
         if fixed_val is not None:
             if fixed_val< low or fixed_val>high:
                 logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
@@ -108,8 +110,8 @@ class HyperparameterManager:
         step: Optional[float] = None,
         log=False,
     ) -> float:
-        assert name in self._param_config, f"request for unregisted param `{name}`"
-        fixed_val = self._param_config[name]
+        assert name in self._arg_config, f"request for unregisted param `{name}`"
+        fixed_val = self._arg_config[name]
         if fixed_val is not None:
             if fixed_val< low or fixed_val>high:
                 logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
@@ -126,7 +128,7 @@ class HyperparameterManager:
     
     @property
     def params(self):
-        return self._param_config
+        return self._arg_config|self._param_config
     
     
 
@@ -347,6 +349,8 @@ class TrainBootstrap:
         if seed is not None:
             self.set_fixed_seed(seed)
         
+        # prepare hyperparameter manager
+        self._hp_manager=HyperparameterManager()
         self._inherit_states:Dict[str,Any]={}
     
     @property
@@ -377,26 +381,16 @@ class TrainBootstrap:
         logger.info("initialized ddp")
 
     def _init_logger(self,verbose:bool):
-        stdout_level="INFO"
-        file_level="DEBUG"
-        if verbose:
-            stdout_level="DEBUG"
-            file_level="TRACE"
         # logger file
         if not os.path.exists("logs"):
             os.mkdir("logs")
-        if dist.is_enabled():
-            logger.remove()
-            logger.add(sys.stderr, level=stdout_level, format=LOGGER_FORMAT)
-            logger.add(
-                f"logs/log_{self._comment}_r{dist.get_rank()}.log",
-                level=file_level,
-                format=LOGGER_FORMAT,
-            )
+        
+        # TODO: handle ddp
+        set_logger_file(f"logs/log_{self._comment}.log")
+        if verbose:
+            set_verbosity(logging.DEBUG)
         else:
-            logger.remove()
-            logger.add(sys.stderr, level=stdout_level, format=LOGGER_FORMAT)
-            logger.add(f"logs/log_{self._comment}.log",level=file_level, format=LOGGER_FORMAT)
+            set_verbosity(logging.INFO)
         logger.info("initialized logger")
     
     def _report_info(self,helper:ModelStaff,board_dir:str):
@@ -429,8 +423,7 @@ class TrainBootstrap:
     def optimize(
         self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int, stage:Optional[int]=None,
     ):
-        # prepare hyperparameter manager
-        self._hp_manager=HyperparameterManager()
+        
         self._flush_params()
                 
         stage_comment=self._get_comment(stage)
@@ -505,8 +498,8 @@ class TrainBootstrap:
 
             best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
             target_helper=self.file.get_exp_instance(stage_comment)
-            shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir)
-            shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir)
+            shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir,dirs_exist_ok=True)
+            shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir,dirs_exist_ok=True)
             logger.info("copied best trial as the final result")
         
         logger.warning("[BOOTSTRAP] good luck!")

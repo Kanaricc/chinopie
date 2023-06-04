@@ -8,7 +8,6 @@ from PIL import Image
 import torch
 from torchvision import transforms
 import torch.nn.functional as F
-from loguru import logger
 import numpy as np
 import urllib.request
 import zipfile
@@ -16,6 +15,9 @@ from tqdm import tqdm
 
 from .. import download_with_progress,extract_zip
 from . import MultiLabelLocalDataset
+
+from ... import logging
+_logger=logging.get_logger(__name__)
 
 URLS = {
     "train_img": "http://images.cocodataset.org/zips/train2014.zip",
@@ -39,43 +41,43 @@ def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
     elif phase == "val":
         filename = "val2014.zip"
     else:
-        logger.error(f"unknown phase: {phase}")
+        _logger.error(f"unknown phase: {phase}")
         exit(0)
 
     # image file
     cached_file = os.path.join(tmpdir, filename)
     if not os.path.exists(cached_file):
-        logger.info(f"downloading {URLS[phase+'_img']} to {cached_file}")
+        _logger.info(f"downloading {URLS[phase+'_img']} to {cached_file}")
 
         download_with_progress(URLS[phase + "_img"],cached_file)
 
     # extract image
     img_data = os.path.join(root, filename.split(".")[0])
     if not os.path.exists(img_data):
-        logger.info(
+        _logger.info(
             "[dataset] Extracting tar file {file} to {path}".format(
                 file=cached_file, path=root
             )
         )
         extract_zip(cached_file,root)
-    logger.info("[dataset] Done!")
+    _logger.info("[dataset] Done!")
 
     # train/val images/annotations
     cached_file = os.path.join(tmpdir, "annotations_trainval2014.zip")
     if not os.path.exists(cached_file):
-        logger.info(
+        _logger.info(
             'Downloading: "{}" to {}\n'.format(URLS["annotations"], cached_file)
         )
         download_with_progress(URLS["annotations"],cached_file)
     annotations_data = os.path.join(root, "annotations")
     if not os.path.exists(annotations_data):
-        logger.info(
+        _logger.info(
             "[dataset] Extracting tar file {file} to {path}".format(
                 file=cached_file, path=root
             )
         )
         extract_zip(cached_file,root)
-    logger.info("[annotation] Done!")
+    _logger.info("[annotation] Done!")
 
     annotations_data = os.path.join(root, "annotations")
     anno = os.path.join(root, "{}_annotation.json".format(phase))
@@ -127,7 +129,7 @@ def prepare_coco2014(root: str, phase: str, include_segmentations:bool=False):
         del annotations
         del category
         del category_id
-    logger.info("[json] Done!")
+    _logger.info("[json] Done!")
     os.chdir(work_dir)
 
 
@@ -167,7 +169,7 @@ class COCO2014Dataset(MultiLabelLocalDataset):
 
         prepare_coco2014(root, phase)
         self.load_annotation()
-        logger.info(
+        _logger.info(
             f"[dataset] COCO2014 classification {phase} phase, {self.num_classes} classes, {len(self.img_list)} images"
         )
 

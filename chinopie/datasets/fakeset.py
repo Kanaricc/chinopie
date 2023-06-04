@@ -8,7 +8,6 @@ from PIL import Image
 import torch
 from torchvision import transforms
 import torch.nn.functional as F
-from loguru import logger
 import typing
 
 class FakeOutput(typing.TypedDict):
