@@ -54,7 +54,7 @@ class Recipe1(ModuleRecipe):
 
 
 if __name__=="__main__":
-    tb=TrainBootstrap(disk_root='deps',epoch_num=10,load_checkpoint=True,save_checkpoint=True,comment=None)
+    tb=TrainBootstrap(disk_root='deps',num_epoch=10,load_checkpoint=True,save_checkpoint=True,comment=None)
     tb.reg_float('lr')
     tb.reg_int('batch_size')
     tb.optimize(Recipe1(),1)

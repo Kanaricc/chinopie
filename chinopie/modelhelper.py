@@ -276,7 +276,7 @@ class TrainBootstrap:
     def __init__(
         self,
         disk_root: str,
-        epoch_num: int,
+        num_epoch: int,
         load_checkpoint: bool,
         save_checkpoint: bool,
         comment: Optional[str],
@@ -292,7 +292,7 @@ class TrainBootstrap:
             prog='ChinoPie'
         )
         argparser.add_argument('-r','--disk_root',type=str,default=disk_root)
-        argparser.add_argument('-e','--epoch_num',type=int,default=epoch_num)
+        argparser.add_argument('-n','--num_epoch',type=int,default=num_epoch)
         argparser.add_argument('-l','--load_checkpoint',action='store_true',default=load_checkpoint)
         argparser.add_argument('-s','--save_checkpoint',action='store_true',default=save_checkpoint)
         argparser.add_argument('-c','--comment',type=str,default=comment)
@@ -303,7 +303,7 @@ class TrainBootstrap:
         args,self._extra_arg_str=argparser.parse_known_args()
 
         self._disk_root = args.disk_root
-        self._epoch_num = args.epoch_num
+        self._num_epoch = args.num_epoch
         if args.comment is not None:
             self._comment = args.comment
         else:
@@ -399,7 +399,7 @@ class TrainBootstrap:
             params={
                 "proper device": self._dev,
                 "diagnose": self._diagnose_mode,
-                "epoch num": self._epoch_num,
+                "epoch num": self._num_epoch,
                 "early stop": self._enable_prune,
                 "dataset": dataset_str,
                 "board dir": board_dir,
@@ -461,7 +461,7 @@ class TrainBootstrap:
                 logger.info(f"found failed trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
                 resumed_trials.add(trial.user_attrs['trial_id'])
-            elif trial.user_attrs['num_epochs']<self._epoch_num:
+            elif trial.user_attrs['num_epochs']<self._num_epoch:
                 logger.info(f"found unfinished trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
                 resumed_trials.add(trial.user_attrs['trial_id'])
@@ -509,7 +509,7 @@ class TrainBootstrap:
         # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
         trial.set_user_attr('trial_id',trial_id)
-        trial.set_user_attr('num_epochs',self._epoch_num)
+        trial.set_user_attr('num_epochs',self._num_epoch)
 
         logger.info(f"this is trial {trial._trial_id}, real id {trial_id}")
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
@@ -531,7 +531,7 @@ class TrainBootstrap:
         # check diagnose mode
         if self._diagnose_mode:
             logger.info("diagnose mode is enabled. run 2 epochs only.")
-            self._epoch_num = 2
+            self._num_epoch = 2
         
         recovered_epoch=None
         if self._load_checkpoint:
@@ -561,7 +561,7 @@ class TrainBootstrap:
         if dist.is_enabled():
             dist.barrier()
         logger.warning("ready to train model")
-        for epochi in range(self._epoch_num):
+        for epochi in range(self._num_epoch):
             self._cur_epochi=epochi
             if not dist.is_enabled():
                 logger.warning(f"=== START EPOCH {epochi} ===")
