@@ -7,8 +7,10 @@ from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 import chinopie
-from chinopie import logger
 from chinopie.modelhelper import ModelStaff,PhaseHelper,HyperparameterManager
+
+from . import logging
+_logger=logging.get_logger(__name__)
 
 
 class ModuleRecipe(ABC):
@@ -25,7 +27,7 @@ class ModuleRecipe(ABC):
         pass
 
     def end(self,helper:ModelStaff)->Dict[str,Any]:
-        logger.info("pass empty state to next stage")
+        _logger.info("pass empty state to next stage")
         return {}
 
     @abstractmethod
@@ -33,7 +35,7 @@ class ModuleRecipe(ABC):
         ...
 
     def set_scheduler(self,optimizer:Optimizer,hp_manager:HyperparameterManager,staff:ModelStaff)->Optional[LRScheduler]:
-        logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
+        _logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
         return None
     
     def _set_staff(self,staff:ModelStaff):
@@ -182,7 +184,7 @@ class ModuleRecipe(ABC):
             self.scheduler.load_state_dict(data['scheduler'])
         else:
             if 'scheduler' in data:
-                logger.warning("found scheduler state in checkpoint but no scheduler is set")
+                _logger.warning("found scheduler state in checkpoint but no scheduler is set")
         return data['extra']
     
     def save_ckpt(self,ckpt:str,extra_state:Any):

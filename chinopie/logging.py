@@ -37,7 +37,7 @@ def create_default_formatter() -> colorlog.ColoredFormatter:
     """
 
     return colorlog.ColoredFormatter(
-        "%(log_color)s[%(levelname)1.1s %(asctime)s]%(reset)s %(message)s",datefmt="%m-%d %H:%M:%S,uuu",
+        "%(log_color)s[%(levelname)1.1s %(asctime)s.%(msecs)03d]%(reset)s %(message)s",datefmt="%m-%d %H:%M:%S",
     )
 
 
