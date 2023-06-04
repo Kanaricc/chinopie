@@ -20,7 +20,7 @@ class ModuleRecipe(ABC):
         pass
 
 
-    def prepare(self,hp_manager:HyperparameterManager,staff:ModelStaff,inherited_states:Dict[str,Any]):
+    def prepare(self,hp:HyperparameterManager,staff:ModelStaff,inherited_states:Dict[str,Any]):
         """
         prepare models and probes here
         """
@@ -31,10 +31,10 @@ class ModuleRecipe(ABC):
         return {}
 
     @abstractmethod
-    def set_optimizers(self,model,hp_manager:HyperparameterManager,staff:ModelStaff)->Optimizer:
+    def set_optimizers(self,model,hp:HyperparameterManager,staff:ModelStaff)->Optimizer:
         ...
 
-    def set_scheduler(self,optimizer:Optimizer,hp_manager:HyperparameterManager,staff:ModelStaff)->Optional[LRScheduler]:
+    def set_scheduler(self,optimizer:Optimizer,hp:HyperparameterManager,staff:ModelStaff)->Optional[LRScheduler]:
         _logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
         return None
     
