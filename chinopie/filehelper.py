@@ -136,7 +136,7 @@ class InstanceFileHelper:
     def get_initparams_slot(self) -> str:
         if not dist.is_main_process():
             _logger.warning("[DDP] try to get checkpoint slot on follower")
-        _logger.info("[INIT] you have ask for initialization slot")
+        _logger.info("created initialization slot")
         filename = f"init.pth"
         return os.path.join(self.ckpt_dir, filename)
 

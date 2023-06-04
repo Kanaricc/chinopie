@@ -184,7 +184,7 @@ class VOC2007Dataset(MultiLabelLocalDataset):
 
 
         _logger.warning(
-            f"[VOC2007] load num of classes {len(cat2id)}, num images {len(img_list)}"
+            f"[dataset] load num of classes {len(cat2id)}, num images {len(img_list)}"
         )
 
         num_labels = len(cat2id)

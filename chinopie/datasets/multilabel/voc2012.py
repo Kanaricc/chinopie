@@ -178,7 +178,7 @@ class VOC2012Dataset(MultiLabelLocalDataset):
 
 
         _logger.warning(
-            f"[VOC2012] load num of classes {len(cat2id)}, num images {len(img_list)}"
+            f"[dataset] load num of classes {len(cat2id)}, num images {len(img_list)}"
         )
 
         num_labels = len(cat2id)

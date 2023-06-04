@@ -573,7 +573,7 @@ class TrainBootstrap:
             recipe.before_epoch()
             if recovered_epoch is not None and epochi <= recovered_epoch:
                 recipe.after_epoch()
-                logger.info(f"[HELPER] fast pass epoch {recovered_epoch}")
+                logger.info(f"fast pass epoch {recovered_epoch}")
                 continue
             
             self._prepare_dataloader_for_epoch(self.staff._dataloader_train)
