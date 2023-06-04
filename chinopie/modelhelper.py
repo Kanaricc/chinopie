@@ -697,7 +697,7 @@ class TrainBootstrap:
     def _end_phase(self,epochi:int,phase:PhaseHelper):
         if not dist.is_enabled():
             for k,v in phase.custom_probes.items():
-                logger.info(f"|| {k}: {v.average()}")
+                logger.info(f"| {k}: {v.average()}")
 
             logger.info(
                 f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
