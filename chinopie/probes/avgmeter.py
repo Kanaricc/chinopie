@@ -1,3 +1,5 @@
+import math
+
 from torch import Tensor
 import torch
 from torch.types import Number
@@ -6,21 +8,17 @@ from collections import deque
 class SmoothMeanMeter:
     def __init__(self,length:int,level1:float=0.1,level2:float=0.25,level3:float=0.5) -> None:
         self._levels=[level1*length,level2*length,level3*length]
-        self._qs=[deque(maxlen=int(x)) for x in self._levels]
+        self._decays=[math.pow(1/x,1/x) for x in self._levels]
+        self._qs=[0 for x in self._levels]
     
     def add(self,x:float):
-        for q in self._qs:
-            q.append(x)
+        self._qs=[qs*d+x for qs,d in zip(self._qs,self._decays)]
     
     def _sync_dist_nodes(self):
         raise NotImplemented
 
     def __str__(self):
-        res=[]
-        for q in self._qs:
-            t=torch.tensor(list(q),dtype=torch.float)
-            res.append(t.mean().item())
-        return ', '.join(map(lambda x: f"{x:.2f}",res))
+        return ', '.join(map(lambda x: f"{x:.2f}",self._qs))
 
 class AverageMeter:
     def __init__(self, name: str) -> None:
