@@ -33,6 +33,11 @@ def extract_zip(file:str,tgt:str):
     elif file.endswith('.tar'):
         with tarfile.TarFile(file,'r') as f:
             f.extractall(tgt)
+    elif file.endswith('.gz'):
+        with tarfile.open(file,'r') as f:
+            f.extractall(tgt)
+    else:
+        raise NotImplementedError(f"unknown type of zip file `{file}`")
 
 
 
@@ -40,4 +45,4 @@ from .multilabel.coco2014 import COCO2014Dataset,get_coco_labels
 from .multilabel.voc2012 import VOC2012Dataset,get_voc_labels
 from .multilabel.voc2007 import VOC2007Dataset,get_voc_labels
 from .fakeset import FakeConstSet,FakeEmptySet,FakeOutput,FakeRandomSet,FakeNormalSet
-
+from .multiclass import CIFAR10,CIFAR100
