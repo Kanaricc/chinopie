@@ -487,20 +487,23 @@ class TrainBootstrap:
             pass
         finally:
             # post process
-            best_trial=study.best_trial
-            best_params = best_trial.user_attrs['params']
-            best_value = study.best_value
             logger.warning(f"[BOOPSTRAP] finish optimization of stage `{stage_comment}`")
-            logger.warning(
-                f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
-            )
-            logger.warning(f"[BOOTSTRAP] best score: {best_value}")
+            if len(study.get_trials(states=[optuna.trial.TrialState.COMPLETE]))>0:
+                best_trial=study.best_trial
+                best_params = best_trial.user_attrs['params']
+                best_value = study.best_value
+                logger.warning(
+                    f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
+                )
+                logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
-            best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
-            target_helper=self.file.get_exp_instance(stage_comment)
-            shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir,dirs_exist_ok=True)
-            shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir,dirs_exist_ok=True)
-            logger.info("copied best trial as the final result")
+                best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
+                target_helper=self.file.get_exp_instance(stage_comment)
+                shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir,dirs_exist_ok=True)
+                shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir,dirs_exist_ok=True)
+                logger.info("copied best trial as the final result")
+            else:
+                logger.info("[BOOTSTRAP] no trials are completed")
         
         logger.warning("[BOOTSTRAP] good luck!")
 
