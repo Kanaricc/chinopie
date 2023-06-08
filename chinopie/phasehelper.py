@@ -82,7 +82,7 @@ class PhaseHelper:
         if dist.is_main_process():
             if self._dry_run:
                 _logger.info("data preview can be found in log")
-            with tqdm(total=batch_len,dynamic_ncols=True) as progressbar:
+            with tqdm(total=batch_len,dynamic_ncols=True,ascii=' >=') as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._dry_run:
                         torch.set_printoptions(profile='full')
