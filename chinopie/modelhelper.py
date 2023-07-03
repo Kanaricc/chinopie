@@ -229,7 +229,10 @@ class ModelStaff:
             logger.debug("ddp enabled, checked distributed sampler in test set")
     
     def reg_model(self,model:nn.Module):
-        self._model=model.to(self.dev)
+        self._model=model
+    
+    def prepare(self):
+        self._model=self._model.to(self.dev)
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer
@@ -563,6 +566,7 @@ class TrainBootstrap:
 
         if dist.is_enabled():
             dist.barrier()
+        self.staff.prepare()
         logger.warning("ready to train model")
         for epochi in range(self._num_epoch):
             self._cur_epochi=epochi
