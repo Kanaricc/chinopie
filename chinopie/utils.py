@@ -32,21 +32,20 @@ def copy_model(model:nn.Module,dev=None):
     model_copy.load_state_dict(model.state_dict()) # copy weights and stuff
     return model_copy
 
-def freeze_model(model:nn.Module,eval:bool=True):
+def freeze_model(model:nn.Module):
     for param in model.parameters():
         param.requires_grad_(False)
-    if eval:
-        model.eval()
 
 def unfreeze_model(model:nn.Module):
     for param in model.parameters():
         param.requires_grad_(True)
 
-def set_train(model:nn.Module,eval_on_nograd_module:bool=True):
+def set_train(model:nn.Module,eval_on_batchnorm:bool=True):
     for mod in model.modules():
         has_require_grad=False
         for param in mod.parameters():
             has_require_grad|=param.requires_grad
+        nn.BatchNorm1d
         if not has_require_grad and eval_on_nograd_module:
             mod.eval()
 
