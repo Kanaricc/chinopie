@@ -48,7 +48,7 @@ def set_train(model:nn.Module,eval_on_batchnorm:bool=True):
         # dropout is supposed to be active after frozen
         if not has_require_grad:
             if isinstance(mod,(nn.BatchNorm1d,nn.BatchNorm2d,nn.BatchNorm3d,nn.SyncBatchNorm)):
-                _logger.info(f"eval frozen batchnorm layer `{mod}`")
+                _logger.debug(f"eval frozen batchnorm layer `{mod}`")
                 mod.eval()
 
 def set_eval(model:nn.Module):
