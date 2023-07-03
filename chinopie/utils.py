@@ -1,5 +1,6 @@
 import random
 import os
+import copy
 from datetime import datetime
 from typing import Optional
 from typing import Dict,Any,Optional,List
@@ -26,11 +27,10 @@ def set_fixed_seed(seed:Any):
     np.random.seed(seed)
 
 def copy_model(model:nn.Module,dev=None):
-    model_copy = type(model)() # get a new instance
-    if dev is not None:
-        model_copy=model_copy.to(dev)
-    model_copy.load_state_dict(model.state_dict()) # copy weights and stuff
-    return model_copy
+    if dev is None:
+        return copy.deepcopy(model.cpu())
+    else:
+        return copy.deepcopy(model.cpu()).to(dev)
 
 def freeze_model(model:nn.Module):
     for param in model.parameters():
@@ -45,9 +45,11 @@ def set_train(model:nn.Module,eval_on_batchnorm:bool=True):
         has_require_grad=False
         for param in mod.parameters():
             has_require_grad|=param.requires_grad
-        nn.BatchNorm1d
-        if not has_require_grad and eval_on_nograd_module:
-            mod.eval()
+        # dropout is supposed to be active after frozen
+        if not has_require_grad:
+            if isinstance(mod,(nn.BatchNorm1d,nn.BatchNorm2d,nn.BatchNorm3d,nn.SyncBatchNorm)):
+                _logger.info(f"eval frozen batchnorm layer `{mod}`")
+                mod.eval()
 
 def set_eval(model:nn.Module):
     model.eval()
