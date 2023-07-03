@@ -424,7 +424,7 @@ class TrainBootstrap:
         return os.path.join("opts", f"{comment}.db")
 
     def optimize(
-        self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int, stage:Optional[int]=None,
+        self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int,num_epoch:Optional[int]=None, stage:Optional[int]=None,always_run:bool=False,
     ):
         
         self._flush_params()
@@ -441,8 +441,8 @@ class TrainBootstrap:
         if not os.path.exists("opts"):
             os.mkdir("opts")
         storage_path = self._get_study_path(stage_comment)
-        # do not save storage in diagnose mode
-        if self._diagnose_mode:
+        # when in diagnose mode, or the `always run` is true, do not save storage.
+        if self._diagnose_mode or always_run:
             storage_path=None
         else:
             storage_path=f"sqlite:///{storage_path}"
@@ -479,13 +479,17 @@ class TrainBootstrap:
             logger.warning(f"best score: {study.best_value}")
             return
         
+        if num_epoch is None:num_epoch=self._num_epoch
+        
         # in diagnose mode, run 1 times only
         if self._diagnose_mode:
+            logger.info("diagnose mode is enabled. run 1 trial and 2 epochs only.")
             n_trials=1
-        
+            num_epoch = 2
+        assert num_epoch is not None
 
         try:
-            study.optimize(lambda x: self._wrapper_train(x,recipe,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+            study.optimize(lambda x: self._wrapper_train(x,recipe,num_epoch,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
         except optuna.TrialPruned:
             pass
         finally:
@@ -510,7 +514,7 @@ class TrainBootstrap:
         
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
+    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe,num_epoch:int, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
         self._hp_manager._set_trial(trial)
         # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
@@ -534,10 +538,6 @@ class TrainBootstrap:
         del _scheduler
 
         best_score=self._inf_score
-        # check diagnose mode
-        if self._diagnose_mode:
-            logger.info("diagnose mode is enabled. run 2 epochs only.")
-            self._num_epoch = 2
         
         recovered_epoch=None
         if self._load_checkpoint:
@@ -568,7 +568,7 @@ class TrainBootstrap:
             dist.barrier()
         self.staff.prepare()
         logger.warning("ready to train model")
-        for epochi in range(self._num_epoch):
+        for epochi in range(num_epoch):
             self._cur_epochi=epochi
             if not dist.is_enabled():
                 logger.warning(f"=== START EPOCH {epochi} ===")
