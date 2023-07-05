@@ -486,10 +486,12 @@ class TrainBootstrap:
             logger.info("diagnose mode is enabled. run 1 trial and 2 epochs only.")
             n_trials=1
             num_epoch = 2
+        # in always_run, do not load checkpoint
+        load_checkpoint=self._load_checkpoint and not always_run
         assert num_epoch is not None
 
         try:
-            study.optimize(lambda x: self._wrapper_train(x,recipe,num_epoch,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+            study.optimize(lambda x: self._wrapper_train(x,recipe,num_epoch,load_checkpoint,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
         except optuna.TrialPruned:
             pass
         finally:
@@ -514,7 +516,7 @@ class TrainBootstrap:
         
         logger.warning("[BOOTSTRAP] good luck!")
 
-    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe,num_epoch:int, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
+    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe,num_epoch:int,load_checkpoint:bool, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
         self._hp_manager._set_trial(trial)
         # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
@@ -540,14 +542,14 @@ class TrainBootstrap:
         best_score=self._inf_score
         
         recovered_epoch=None
-        if self._load_checkpoint:
+        if load_checkpoint:
             latest_ckpt_path=trial_file.find_latest_checkpoint()
             if latest_ckpt_path is not None:
                 logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
             else:
                 logger.info(f"no checkpoint found")
 
-            if self._load_checkpoint and latest_ckpt_path is not None:
+            if load_checkpoint and latest_ckpt_path is not None:
                 state=recipe.restore_ckpt(latest_ckpt_path)
                 recovered_epoch=state['cur_epochi']
                 best_score=state['best_score']
