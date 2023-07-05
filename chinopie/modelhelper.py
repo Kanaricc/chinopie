@@ -324,12 +324,12 @@ class TrainBootstrap:
 
         # set prune
         if self._enable_prune:
-            logger.info('early stop is enabled')
+            logger.info('[BOOTSTRAP] early stop is enabled')
 
         # set clear
         if args.clear:
             # do clear
-            input("are you sure to clear all state files and logs? (press ctrl+c to quit)")
+            input("[BOOTSTRAP] are you sure to clear all state files and logs? (press ctrl+c to quit)")
             self.clear()
         
         # check git ignore
@@ -338,15 +338,15 @@ class TrainBootstrap:
         # set diagnose mode
         if diagnose:
             torch.autograd.anomaly_mode.set_detect_anomaly(True)
-            logger.info("diagnose mode enabled")
+            logger.info("[BOOTSTRAP] diagnose mode enabled")
         
         # set snapshot
         if enable_snapshot:
             if not diagnose:
                 create_snapshot(self._comment)
-                logger.info("created snapshot")
+                logger.info("[BOOTSTRAP] created snapshot")
             else:
-                logger.info("snapshot is disabled in diagnose mode")
+                logger.info("[BOOTSTRAP] snapshot is disabled in diagnose mode")
         
         # set fixed seed
         if seed is not None:
@@ -363,7 +363,7 @@ class TrainBootstrap:
     def release(self):
         if self._diagnose_mode:
             self.file.clear_all_instance()
-            logger.info("deleted trial files in diagnose mode")
+            logger.info("[BOOTSTRAP] deleted trial files in diagnose mode")
     
     def clear(self):
         if os.path.exists('logs'):shutil.rmtree('logs')
@@ -374,14 +374,14 @@ class TrainBootstrap:
             set_fixed_seed(seed)
         else:
             set_fixed_seed(seed+dist.get_rank())
-            logger.info("ddp detected, use different seed")
+            logger.info("[BOOTSTRAP] ddp detected, use different seed")
     
     def _flush_params(self):
         self._hp_manager.parse_args(self._extra_arg_str)
         
 
     def _init_ddp(self):
-        logger.info("initialized ddp")
+        logger.info("[BOOTSTRAP] initialized ddp")
 
     def _init_logger(self,verbose:bool):
         # logger file
@@ -394,7 +394,7 @@ class TrainBootstrap:
             set_verbosity(logging.DEBUG)
         else:
             set_verbosity(logging.INFO)
-        logger.info("initialized logger")
+        logger.info("[BOOTSTRAP] initialized logger")
     
     def _report_info(self,helper:ModelStaff,board_dir:str):
         dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
@@ -410,8 +410,8 @@ class TrainBootstrap:
                 "custom probes": helper._custom_probes,
             }
         )
-        logger.warning(f"[INFO]\n{table}")
-        logger.warning(f"[HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
+        logger.warning(f"[BOOTSTRAP] [INFO]\n{table}")
+        logger.warning(f"[BOOTSTRAP] [HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
     
     def _get_comment(self,stage:Optional[int]=None):
         if stage is None:
@@ -433,7 +433,7 @@ class TrainBootstrap:
         # find previous file helper
         if stage and stage>0:
             prev_file_helper=self.file.get_exp_instance(f"{self._comment}({stage-1})")
-            logger.debug("found previous file helper")
+            logger.debug("[BOOTSTRAP] found previous file helper")
         else:
             prev_file_helper=None
 
@@ -457,33 +457,33 @@ class TrainBootstrap:
         resumed_trials=set()
         for trial in study.trials:
             if trial.user_attrs['trial_id'] in resumed_trials:
-                logger.info(f"skip trial {trial._trial_id} in resumed trials")
+                logger.info(f"[BOOTSTRAP] skip trial {trial._trial_id} in resumed trials")
                 continue
             # if previously we have failed trials, resuming it with correct id
             if trial.state==optuna.trial.TrialState.FAIL:
-                logger.info(f"found failed trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
+                logger.info(f"[BOOTSTRAP] found failed trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
                 resumed_trials.add(trial.user_attrs['trial_id'])
             elif trial.user_attrs['num_epochs']<self._num_epoch:
-                logger.info(f"found unfinished trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
+                logger.info(f"[BOOTSTRAP] found unfinished trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
                 study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
                 resumed_trials.add(trial.user_attrs['trial_id'])
             elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
                 finished_trials.add(trial.user_attrs['trial_id'])
-        logger.debug(f"found finished trials {finished_trials}. the requested #trials is {n_trials}")
+        logger.debug(f"[BOOTSTRAP] found finished trials {finished_trials}. the requested #trials is {n_trials}")
         if len(finished_trials)==n_trials:
-            logger.warning(f"this study `{stage_comment}` is already finished")
+            logger.warning(f"[BOOTSTRAP] this study `{stage_comment}` is already finished")
             logger.warning(
-                f"best hyperparameters\n{show_params_in_3cols(study.best_trial.user_attrs['params'])}"
+                f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(study.best_trial.user_attrs['params'])}"
             )
-            logger.warning(f"best score: {study.best_value}")
+            logger.warning(f"[BOOTSTRAP] best score: {study.best_value}")
             return
         
         if num_epoch is None:num_epoch=self._num_epoch
         
         # in diagnose mode, run 1 times only
         if self._diagnose_mode:
-            logger.info("diagnose mode is enabled. run 1 trial and 2 epochs only.")
+            logger.info("[BOOTSTRAP] diagnose mode is enabled. run 1 trial and 2 epochs only.")
             n_trials=1
             num_epoch = 2
         # in always_run, do not load checkpoint
@@ -510,7 +510,7 @@ class TrainBootstrap:
                 target_helper=self.file.get_exp_instance(stage_comment)
                 shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir,dirs_exist_ok=True)
                 shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir,dirs_exist_ok=True)
-                logger.info("copied best trial as the final result")
+                logger.info("[BOOTSTRAP] copied best trial as the final result")
             else:
                 logger.info("[BOOTSTRAP] no trials are completed")
         
