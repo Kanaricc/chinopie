@@ -331,6 +331,7 @@ class TrainBootstrap:
             # do clear
             input("[BOOTSTRAP] are you sure to clear all state files and logs? (press ctrl+c to quit)")
             self.clear()
+            exit(0)
         
         # check git ignore
         check_gitignore([self._disk_root])
@@ -506,7 +507,7 @@ class TrainBootstrap:
                 )
                 logger.warning(f"[BOOTSTRAP] best score: {best_value}")
 
-                best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial._trial_id}")
+                best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial.user_attrs['trial_id']}")
                 target_helper=self.file.get_exp_instance(stage_comment)
                 shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir,dirs_exist_ok=True)
                 shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir,dirs_exist_ok=True)
