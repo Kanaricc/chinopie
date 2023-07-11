@@ -66,6 +66,7 @@ class AveragePrecisionMeter:
                 target.dim() == 2
             ), "wrong target size (should be 1D or 2D with one column \
                 per class)"
+        assert output.size(1)==target.size(1), "#labels not matched between output and target"
         if self.scores.numel() > 0:
             assert target.size(1) == self.targets.size(
                 1
