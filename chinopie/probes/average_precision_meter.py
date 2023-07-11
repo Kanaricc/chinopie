@@ -53,14 +53,14 @@ class AveragePrecisionMeter:
         assert output.dtype == torch.float, "wrong output type"
 
         if output.dim() == 1:
-            output = output.view(-1, 1)
+            output = output.view(1, -1)
         else:
             assert (
                 output.dim() == 2
             ), "wrong output size (should be 1D or 2D with one column \
                 per class)"
         if target.dim() == 1:
-            target = target.view(-1, 1)
+            target = target.view(1, -1)
         else:
             assert (
                 target.dim() == 2
