@@ -175,7 +175,7 @@ class ModuleRecipe(ABC):
         raise NotImplemented
 
     def restore_ckpt(self,ckpt:str)->Dict[str,Any]:
-        data=torch.load(ckpt,map_location='cpu')
+        data=torch.load(ckpt,map_location=self.dev)
         if 'custom' in ckpt:
             self.import_custom_state(data['custom'])
         self.model.load_state_dict(data['model'])

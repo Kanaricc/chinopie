@@ -533,6 +533,7 @@ class TrainBootstrap:
         )
         recipe._set_staff(self.staff)
         recipe.prepare(self._hp_manager,self.staff,inherit_states)
+        self.staff.prepare()
         # set optimizer
         self.staff._reg_optimizer(recipe.set_optimizers(self.staff._model,self._hp_manager,self.staff))
         _scheduler=recipe.set_scheduler(self.staff._optimizer,self._hp_manager,self.staff)
@@ -569,7 +570,6 @@ class TrainBootstrap:
 
         if dist.is_enabled():
             dist.barrier()
-        self.staff.prepare()
         logger.warning("ready to train model")
         for epochi in range(num_epoch):
             self._cur_epochi=epochi
