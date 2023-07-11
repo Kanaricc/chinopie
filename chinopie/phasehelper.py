@@ -85,9 +85,9 @@ class PhaseHelper:
             with tqdm(total=batch_len,dynamic_ncols=True,ascii=' >=') as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._dry_run:
-                        torch.set_printoptions(profile='full')
+                        # torch.set_printoptions(profile='full')
                         _logger.debug(data)
-                        torch.set_printoptions(profile='default')
+                        # torch.set_printoptions(profile='default')
                     yield batchi, data
                     progressbar.update()
                     postfix={'loss':str(self._realtime_loss_probe)}
