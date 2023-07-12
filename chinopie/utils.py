@@ -143,6 +143,26 @@ def any_to(data:Any,device:Any):
     else:
         return data
 
+def validate_loss(loss: Tensor, panic: bool = True) -> bool:
+    hasnan = loss.isnan().any().item()
+    hasinf = loss.isinf().any().item()
+    hasneg = (loss < 0).any().item()
+    if panic:
+        assert not hasnan, f"loss function returns invalid value `nan`: {loss}"
+        assert not hasinf, f"loss function returns invalid value `inf`: {loss}"
+        assert not hasneg, f"loss function returns negative value: {loss}"
+    return not hasnan and not hasinf and not hasneg
+
+def validate_tensor(t: Tensor, panic: bool = True, msg: str = "") -> bool:
+    hasnan = t.isnan().any().item()
+    hasinf = t.isinf().any().item()
+
+    if panic:
+        assert not hasnan, f"tensor has invalid value `nan`: {t} ({msg})"
+        assert not hasinf, f"tensor has invalid value `inf`: {t} ({msg})"
+
+    return not hasnan and not hasinf
+
 def get_env(name:str):
     res=os.environ.get(name)
     assert res is not None, f"enviroment variable `{name}` required"
