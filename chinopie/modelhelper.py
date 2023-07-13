@@ -563,8 +563,8 @@ class TrainBootstrap:
         # create checkpoint dir
         trial_file.prepare_checkpoint_dir()
         # create board dir before training
-        tbwriter = SummaryWriter(trial_file.default_board_dir)
-        self._report_info(helper=self.staff,board_dir=tbwriter.log_dir)
+        self.tbwriter = SummaryWriter(trial_file.default_board_dir)
+        self._report_info(helper=self.staff,board_dir=self.tbwriter.log_dir)
         # append all params (suggested and fixed) into attrs
         trial.set_user_attr('params',self._hp_manager.params)
 
@@ -705,10 +705,10 @@ class TrainBootstrap:
         del self._latest_states
     
     def _end_phase(self,epochi:int,phase:PhaseHelper):
+        self.staff.update_tb(epochi,phase,self.tbwriter)
         if not dist.is_enabled():
             for k,v in phase.custom_probes.items():
                 logger.info(f"| {k}: {v.average()}")
-
             logger.info(
                 f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
             )
