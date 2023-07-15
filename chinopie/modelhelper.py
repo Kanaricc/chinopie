@@ -253,7 +253,7 @@ class ModelStaff:
             tbwriter.add_scalar(
                 f"loss/{phase._phase_name}", phase.loss_probe.average(), epochi
             )
-            tbwriter.add_scalar("score/train", phase.score, epochi)
+            tbwriter.add_scalar(f"score/{phase._phase_name}", phase.score, epochi)
 
             for k in self._custom_probes:
                 if phase.custom_probes[k].has_data():
