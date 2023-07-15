@@ -262,9 +262,6 @@ class ModelStaff:
                         phase.custom_probes[k].average(),
                         epochi,
                     )
-                    logger.info(
-                        f"[{phase._phase_name} probes] {k}: {phase.custom_probes[k].average()}"
-                    )
 
 # worker seed init in different threads
 def worker_init_fn(worker_id):
@@ -497,7 +494,7 @@ class TrainBootstrap:
             pass
         finally:
             # post process
-            logger.warning(f"[BOOPSTRAP] finish optimization of stage `{stage_comment}`")
+            logger.warning(f"[BOOTSTRAP] finish optimization of stage `{stage_comment}`")
             if len(study.get_trials(states=[optuna.trial.TrialState.COMPLETE]))>0:
                 best_trial=study.best_trial
                 best_params = best_trial.user_attrs['params']
