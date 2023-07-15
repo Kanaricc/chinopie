@@ -447,7 +447,7 @@ class TrainBootstrap:
         
         self._inf_score=inf_score
         self._best_trial_score=inf_score
-        self._direction=direction
+        self._direction=direction.lower()
         assert direction in ['maximize','minimize'], f"direction must be whether `maximize` or `minimize`, but `{direction}`"
         study = optuna.create_study(study_name='deadbeef',direction=direction,storage=storage_path,load_if_exists=True)
 
@@ -510,7 +510,7 @@ class TrainBootstrap:
                 shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir,dirs_exist_ok=True)
                 logger.info("[BOOTSTRAP] copied best trial as the final result")
             else:
-                logger.info("[BOOTSTRAP] no trials are completed")
+                logger.warning("[BOOTSTRAP] no trials are completed")
         
         logger.warning("[BOOTSTRAP] good luck!")
 
@@ -743,7 +743,6 @@ class TrainBootstrap:
         )
         recipe._set_staff(staff)
         recipe.prepare(self._hp_manager,self.staff,{})
-
 
         
         raise NotImplementedError()
