@@ -33,8 +33,8 @@ class Recipe1(ModuleRecipe):
         trainloader=DataLoader(trainset,helper.suggest_int('batch_size',1,10))
         valloader=DataLoader(valset,helper.suggest_int('batch_size',1,10))
         testloader=DataLoader(testset,helper.suggest_int('batch_size',1,10))
-        helper.register_dataset(trainset,trainloader,valset,valloader)
-        helper.register_test_dataset(testset,testloader)
+        helper.reg_dataset(trainset,trainloader,valset,valloader)
+        helper.reg_test_dataset(testset,testloader)
 
         model=Model()
         helper.reg_model(model)

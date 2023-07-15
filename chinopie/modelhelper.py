@@ -114,7 +114,7 @@ class HyperparameterManager:
         fixed_val = self._arg_config[name]
         if fixed_val is not None:
             if fixed_val< low or fixed_val>high:
-                logger.warning(f"fixed val {fixed_val} of {name} is out of interval")
+                logger.warning(f"fixed val {fixed_val} of {name} is out of interval [{low}, {high}]")
             logger.debug(f"using fixed param `{name}`")
             return fixed_val
         else:
@@ -193,11 +193,11 @@ class ModelStaff:
     def _get_flag(self,key:str):
         return self._flags[key] if key in self._flags else None
 
-    def register_probe(self, name: str):
+    def reg_probe(self, name: str):
         self._custom_probes.append(name)
         logger.debug(f"register probe `{name}`")
 
-    def register_dataset(
+    def reg_dataset(
         self, train: Any, trainloader: DataLoader, val: Any, valloader: DataLoader
     ):
         self._data_train = train
@@ -216,7 +216,7 @@ class ModelStaff:
             assert not isinstance(self._dataloader_val.sampler, DistributedSampler)
             logger.debug("ddp enabled, checked distributed sampler in train and val set")
 
-    def register_test_dataset(self, test: Any, testloader: DataLoader):
+    def reg_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
         self._dataloader_test = testloader
         logger.debug("registered test set. enabled test phase.")
