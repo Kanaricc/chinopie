@@ -113,7 +113,7 @@ class MultiLabelLocalDataset(MultiLabelDataset):
             )
         image = self._preprocess(rgb_image)
         extra_image= self._extra_preprocess(rgb_image) if self._extra_preprocess else None
-        
+        rgb_image.close()
         
 
         res:MultiLabelSample={

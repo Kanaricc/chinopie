@@ -1,4 +1,5 @@
 # sample execution (requires torchvision)
+import copy
 from typing import List
 import torch
 import numpy as np
@@ -77,7 +78,7 @@ class AveragePrecisionMeter:
         self.scores = torch.cat([self.scores, output.detach().cpu()], dim=0)
         self.targets = torch.cat([self.targets, target.detach().cpu()], dim=0)
 
-        self.filenames += filename  # record filenames
+        self.filenames += copy.deepcopy(filename)  # record filenames
 
     def value(self):
         """Returns the model's average precision for each class
