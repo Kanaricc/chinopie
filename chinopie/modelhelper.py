@@ -454,19 +454,18 @@ class TrainBootstrap:
         finished_trials=set()
         resumed_trials=set()
         for trial in study.trials:
-            if trial.user_attrs['trial_id'] in resumed_trials:
-                logger.info(f"[BOOTSTRAP] skip trial {trial._trial_id} in resumed trials")
-                continue
             # if previously we have failed trials, resuming it with correct id
             if trial.state==optuna.trial.TrialState.FAIL:
                 logger.info(f"[BOOTSTRAP] found failed trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
-                study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+                study.enqueue_trial(trial.params,trial.user_attrs)
                 resumed_trials.add(trial.user_attrs['trial_id'])
             elif trial.user_attrs['num_epochs']<self._num_epoch:
                 logger.info(f"[BOOTSTRAP] found unfinished trial {trial._trial_id} ({trial.user_attrs['trial_id']}), resuming")
-                study.enqueue_trial(trial.params,{'trial_id':trial._trial_id})
+                study.enqueue_trial(trial.params,trial.user_attrs)
                 resumed_trials.add(trial.user_attrs['trial_id'])
             elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
+                logger.info(f"[BOOTSTRAP] found complete trial {trial._trial_id} ({trial.user_attrs['trial_id']})")
+                resumed_trials.remove(trial.user_attrs['trial_id'])
                 finished_trials.add(trial.user_attrs['trial_id'])
         logger.debug(f"[BOOTSTRAP] found finished trials {finished_trials}. the requested #trials is {n_trials}")
         if len(finished_trials)==n_trials:
