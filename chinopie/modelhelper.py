@@ -422,8 +422,10 @@ class TrainBootstrap:
         return os.path.join("opts", f"{comment}.db")
 
     def optimize(
-        self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int,num_epoch:Optional[int]=None, stage:Optional[int]=None,always_run:bool=False,
+        self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int,num_epoch:Optional[int]=None, stage:Optional[int]=None,always_run:bool=False,inherit_states:Optional[Dict[str,Any]]=None,
     ):
+        if inherit_states is None:
+            inherit_states={}
         
         self._flush_params()
                 
@@ -488,7 +490,7 @@ class TrainBootstrap:
         assert num_epoch is not None
 
         try:
-            study.optimize(lambda x: self._wrapper_train(x,recipe,num_epoch,load_checkpoint,prev_file_helper,self._inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+            study.optimize(lambda x: self._wrapper_train(x,recipe,num_epoch,load_checkpoint,prev_file_helper,inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
         except optuna.TrialPruned:
             pass
         finally:
@@ -512,6 +514,7 @@ class TrainBootstrap:
                 logger.warning("[BOOTSTRAP] no trials are completed")
         
         logger.warning("[BOOTSTRAP] good luck!")
+        return self._inherit_states
 
     def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe,num_epoch:int,load_checkpoint:bool, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
         self._hp_manager._set_trial(trial)
