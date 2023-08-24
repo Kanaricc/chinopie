@@ -109,9 +109,9 @@ class ModuleRecipe(ABC):
             output=self.forward_val(dev_data)
             loss=self.cal_loss_val(dev_data,output)
             p.update_loss(loss.detach().cpu())
-            self.update_probe(data,chinopie.any_to(output,'cpu'),p)
-        
-        output_cpu=chinopie.any_to(output,'cpu')
+            output_cpu=chinopie.any_to(output,'cpu')
+            self.update_probe(data,output_cpu,p)
+
         self.after_iter(data,output_cpu,'val')
     
     def run_test_iter(self,data,p:PhaseHelper):
@@ -121,9 +121,9 @@ class ModuleRecipe(ABC):
             output=self.forward_test(dev_data)
             loss=self.cal_loss_test(dev_data,output)
             p.update_loss(loss.detach().cpu())
-            self.update_probe(data,chinopie.any_to(output,'cpu'),p)
+            output_cpu=chinopie.any_to(output,'cpu')
+            self.update_probe(data,output_cpu,p)
         
-        output_cpu=chinopie.any_to(output,'cpu')
         self.after_iter(data,output_cpu,'test')
     
     def forward_train(self,data)->Any:
