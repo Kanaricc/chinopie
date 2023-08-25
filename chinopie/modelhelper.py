@@ -467,7 +467,8 @@ class TrainBootstrap:
                 resumed_trials.add(trial.user_attrs['trial_id'])
             elif trial.state==optuna.trial.TrialState.COMPLETE or trial.state==optuna.trial.TrialState.PRUNED:
                 logger.info(f"[BOOTSTRAP] found complete trial {trial._trial_id} ({trial.user_attrs['trial_id']})")
-                resumed_trials.remove(trial.user_attrs['trial_id'])
+                if trial.user_attrs['trial_id'] in resumed_trials:          
+                    resumed_trials.remove(trial.user_attrs['trial_id'])
                 finished_trials.add(trial.user_attrs['trial_id'])
         logger.debug(f"[BOOTSTRAP] found finished trials {finished_trials}. the requested #trials is {n_trials}")
         if len(finished_trials)==n_trials:
