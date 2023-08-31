@@ -91,7 +91,7 @@ class MultiLabelLocalDataset(MultiLabelDataset):
         assert labels.size(0)==len(self) and labels.size(1)==self._num_labels
         if labels.dtype==torch.int or labels.dtype==torch.long:
             logger.debug("use list-style annotations to reduce memory usage")
-            self._annotations=[]
+            self._annotations=[[] for _ in range(labels.size(0))]
             for k,v in enumerate(labels):
                 self._annotations[k]=(v==1).nonzero(as_tuple=True)[0].tolist()
         else:
