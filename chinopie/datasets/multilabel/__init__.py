@@ -99,6 +99,18 @@ class MultiLabelLocalDataset(MultiLabelDataset):
             warnings.warn("A float tensor is used as annotations. Please check if you want a raw annotations.")
             self._annotations=labels
     
+    def filter_by_label(self,label_id:int):
+        assert label_id<self._num_labels
+        annotations=self.get_all_labels()
+        res_ids=(annotations[:,label_id]==1).nonzero(as_tuple=True)[0]
+        
+        new_img_paths=[self._img_paths[i] for i in res_ids]
+        if isinstance(self._annotations,list):
+            new_annotations=[self._annotations[i] for i in res_ids]
+        else:
+            new_annotations=self._annotations[res_ids]
+        return MultiLabelLocalDataset(new_img_paths,self._num_labels,new_annotations,self._annotation_labels,self._preprocess,self._extra_preprocess,self._negative1)
+
     
     def __getitem__(self, index) -> MultiLabelSample:
         path = self._img_paths[index]
@@ -131,6 +143,9 @@ class MultiLabelLocalDataset(MultiLabelDataset):
     def __len__(self) -> int:
         return len(self._img_paths)
 
+def merge_local_dataset(a:MultiLabelLocalDataset,b:MultiLabelLocalDataset):
+    assert a._negative1==b._negative1
+    
         
 from .coco2014 import COCO2014Dataset
 from .voc2012 import VOC2012Dataset
