@@ -145,7 +145,17 @@ class MultiLabelLocalDataset(MultiLabelDataset):
 
 def merge_local_dataset(a:MultiLabelLocalDataset,b:MultiLabelLocalDataset):
     assert a._negative1==b._negative1
+    assert type(a._annotations)==type(b._annotations)
+
+    new_img_paths=a._img_paths.copy()
+    new_img_paths.extend(b._img_paths)
+    if isinstance(a._annotations,list):
+        new_annotations=a._annotations.copy()
+        new_annotations.extend(b._annotations) # type: ignore
+    else:
+        new_annotations=torch.cat([a._annotations,b._annotations]) # type: ignore
     
+    return MultiLabelLocalDataset(new_img_paths,a._num_labels,new_annotations,a._annotation_labels,a._preprocess,a._extra_preprocess,a._negative1)
         
 from .coco2014 import COCO2014Dataset
 from .voc2012 import VOC2012Dataset
