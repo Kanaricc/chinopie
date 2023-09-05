@@ -50,9 +50,11 @@ def set_train(model:nn.Module,eval_on_batchnorm:bool=True):
             if isinstance(mod,(nn.BatchNorm1d,nn.BatchNorm2d,nn.BatchNorm3d,nn.SyncBatchNorm)):
                 _logger.debug(f"eval frozen batchnorm layer `{mod}`")
                 mod.eval()
+    _logger.debug("set model as training")
 
 def set_eval(model:nn.Module):
     model.eval()
+    _logger.debug("set model as evaluating")
 
 def create_snapshot(comment:Optional[str]=None):
     date=datetime.now().strftime("%Y%m%d%H%M%S")
