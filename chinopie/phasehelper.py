@@ -59,6 +59,7 @@ class PhaseHelper:
         self._dataset = dataset
         self._dataloader = dataloader
         self._dev=dev
+        self._batch_len=len(self._dataloader)
 
         self._custom_probe_name = custom_probes
 

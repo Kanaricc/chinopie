@@ -571,8 +571,10 @@ class TrainBootstrap:
         if dist.is_enabled():
             dist.barrier()
         logger.warning("ready to train model")
+        recipe._total_epoch=num_epoch
         for epochi in range(num_epoch):
             self._cur_epochi=epochi
+            recipe._cur_epoch=epochi # set recipe progress reporter
             if not dist.is_enabled():
                 logger.warning(f"=== START EPOCH {epochi} ===")
             else:

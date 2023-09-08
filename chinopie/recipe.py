@@ -17,6 +17,11 @@ class ModuleRecipe(ABC):
     def __init__(self, clamp_grad:Optional[float]=None,eval_on_nograd_module:bool=True):
         self._clamp_grad=clamp_grad
         self._eval_on_nograd_module=eval_on_nograd_module
+
+        self._cur_epoch:Optional[int]=None
+        self._cur_batch:Optional[int]=None
+        self._total_epoch:Optional[int]=None
+        self._total_batch:Optional[int]=None
         pass
 
 
@@ -59,30 +64,64 @@ class ModuleRecipe(ABC):
     def dev(self):
         return self._staff.dev
     
+    @property
+    def cur_epoch(self):
+        assert self._cur_epoch is not None, "Epoch is not init. Did you access it before the recipe starts?"
+        return self._cur_epoch
     
-    def switch_train(self,model:nn.Module):
+    @property
+    def cur_batch(self):
+        assert self._cur_batch is not None, "Batch is not init. Did you access it before the recipe starts?"
+        return self._cur_batch
+    
+    @property
+    def total_epoch(self):
+        assert self._total_epoch is not None, "Epoch is not init. Did you access it before the recipe starts?"
+        return self._total_epoch
+    
+    @property
+    def total_batch(self):
+        assert self._total_batch is not None, "Batch is not init. Did you access it before the recipe starts?"
+        return self._total_batch
+
+    
+    
+    def switch_train(self,model:Optional[nn.Module]=None):
+        if model is None:model=self.model
         chinopie.set_train(model,self._eval_on_nograd_module)
     
-    def switch_eval(self,model:nn.Module):
+    def switch_eval(self,model:Optional[nn.Module]=None):
+        if model is None:model=self.model
         chinopie.set_eval(model)
     
     def run_train_phase(self,p:PhaseHelper):
         self.switch_train(self.model)
+        self._total_batch=p._batch_len
         for batchi,data in p.range_data():
+            self._cur_batch=batchi
             self.run_train_iter(data,p)
+        if not self.model.training:
+            _logger.warn("The model's state seems be changed unexpectedly during train phase. Please check your code.")
         p.end_phase(self.report_score('train'))
 
     def run_val_phase(self,p:PhaseHelper):
         self.switch_eval(self.model)
+        self._total_batch=p._batch_len
         for batchi,data in p.range_data():
+            self._cur_batch=batchi
             self.run_val_iter(data,p)
+        if self.model.training:
+            _logger.warn("The model's state seems be changed unexpectedly during val phase. Please check your code.")
         p.end_phase(self.report_score('val'))
 
     def run_test_phase(self,p:PhaseHelper):
-        self.model.eval()
+        self.switch_eval(self.model)
+        self._total_batch=p._batch_len
         for batchi,data in p.range_data():
+            self._cur_batch=batchi
             self.run_test_iter(data,p)
-        pass
+        if self.model.training:
+            _logger.warn("The model's state seems be changed unexpectedly during test phase. Please check your code.")
         p.end_phase(self.report_score('test'))
     
     def run_train_iter(self,data,p:PhaseHelper):
@@ -219,3 +258,19 @@ class ModuleRecipe(ABC):
         """
         if self.scheduler is not None:
             self.scheduler.step()
+
+class ModelStateKeeper:
+    def __init__(self,recipe:ModuleRecipe,model:nn.Module) -> None:
+        self._is_training=model.training
+        self._model=model
+        self._recipe=recipe
+
+    def __enter__(self):
+        self._is_training=self._model.training
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self._is_training:
+            self._recipe.switch_train(self._model)
+        else:
+            self._recipe.switch_eval(self._model)
