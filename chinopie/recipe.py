@@ -31,6 +31,13 @@ class ModuleRecipe(ABC):
         """
         pass
 
+    def before_start(self):
+        """
+        Pre-calculation are done here.
+        One can expect the model is correctly broadcasted.
+        """
+        pass
+
     def end(self,helper:ModelStaff)->Dict[str,Any]:
         _logger.info("pass empty state to next stage")
         return {}
