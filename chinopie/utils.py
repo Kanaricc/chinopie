@@ -41,15 +41,15 @@ def unfreeze_model(model:nn.Module):
         param.requires_grad_(True)
 
 def set_train(model:nn.Module,eval_on_batchnorm:bool=True):
+    model.train()
     for mod in model.modules():
         has_require_grad=False
         for param in mod.parameters():
             has_require_grad|=param.requires_grad
         # dropout is supposed to be active after frozen
-        if not has_require_grad:
-            if isinstance(mod,(nn.BatchNorm1d,nn.BatchNorm2d,nn.BatchNorm3d,nn.SyncBatchNorm)):
-                _logger.debug(f"eval frozen batchnorm layer `{mod}`")
-                mod.eval()
+        if not has_require_grad and isinstance(mod,(nn.BatchNorm1d,nn.BatchNorm2d,nn.BatchNorm3d,nn.SyncBatchNorm)) and eval_on_batchnorm:
+            _logger.debug(f"eval frozen batchnorm layer `{mod}`")
+            mod.eval()
     _logger.debug("set model as training")
 
 def set_eval(model:nn.Module):
