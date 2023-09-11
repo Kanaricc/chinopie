@@ -1,4 +1,5 @@
 import pdb
+import warnings
 from typing import Sequence,Any,Dict,TypeVar,Generic,Optional
 from abc import ABC,abstractmethod
 import torch
@@ -103,32 +104,44 @@ class ModuleRecipe(ABC):
     
     def run_train_phase(self,p:PhaseHelper):
         self.switch_train(self.model)
+        state_before=self.model.training
         self._total_batch=p._batch_len
         for batchi,data in p.range_data():
             self._cur_batch=batchi
             self.run_train_iter(data,p)
-        if not self.model.training:
+        state_after=self.model.training
+        if state_before!=state_after:
             _logger.warn("The model's state seems be changed unexpectedly during train phase. Please check your code.")
+        if not self.model.training:
+            warnings.warn("The model is not set for training during train phase. Please understand what you have done.")
         p.end_phase(self.report_score('train'))
 
     def run_val_phase(self,p:PhaseHelper):
         self.switch_eval(self.model)
+        state_before=self.model.training
         self._total_batch=p._batch_len
         for batchi,data in p.range_data():
             self._cur_batch=batchi
             self.run_val_iter(data,p)
+        state_after=self.model.training
+        if state_before!=state_after:
+            _logger.warn("The model's state seems be changed unexpectedly during train phase. Please check your code.")
         if self.model.training:
-            _logger.warn("The model's state seems be changed unexpectedly during val phase. Please check your code.")
+            warnings.warn("The model is not set for evaluating during val phase. Please understand what you have done.")
         p.end_phase(self.report_score('val'))
 
     def run_test_phase(self,p:PhaseHelper):
         self.switch_eval(self.model)
+        state_before=self.model.training
         self._total_batch=p._batch_len
         for batchi,data in p.range_data():
             self._cur_batch=batchi
             self.run_test_iter(data,p)
+        state_after=self.model.training
+        if state_before!=state_after:
+            _logger.warn("The model's state seems be changed unexpectedly during train phase. Please check your code.")
         if self.model.training:
-            _logger.warn("The model's state seems be changed unexpectedly during test phase. Please check your code.")
+            warnings.warn("The model is not set for evaluating during val phase. Please understand what you have done.")
         p.end_phase(self.report_score('test'))
     
     def run_train_iter(self,data,p:PhaseHelper):
