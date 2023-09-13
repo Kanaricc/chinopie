@@ -209,7 +209,7 @@ class ModuleRecipe(ABC):
     
     @abstractmethod
     def cal_loss(self,data,output)->Tensor:
-        raise NotImplemented
+        raise NotImplementedError()
     
     def update_probe(self,data,output,p:PhaseHelper):
         """
