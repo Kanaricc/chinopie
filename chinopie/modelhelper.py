@@ -724,8 +724,14 @@ class TrainBootstrap:
         logger.debug("checking instant cmd")
         if os.path.exists('instant_cmd'):
             with open('instant_cmd','r') as f:
-                full_cmd=f.read().strip()
-            os.remove('instant_cmd')
+                full_cmd=list(map(lambda x:x.strip(),f.readlines()))
+            if len(full_cmd)==0:
+                os.remove('instant_cmd')
+            else:
+                with open('instant_cmd','w') as f:
+                    f.writelines(full_cmd[1:])
+                full_cmd=full_cmd[0]
+
             if full_cmd in ['prune','pdb']:
                 logger.warning(f"received command `{full_cmd}`")
                 return full_cmd
