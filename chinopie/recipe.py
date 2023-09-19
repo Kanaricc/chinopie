@@ -279,6 +279,21 @@ class ModuleRecipe(ABC):
         if self.scheduler is not None:
             self.scheduler.step()
 
+
+class EvaluationRecipe(ModuleRecipe):
+    def run_train_iter(self,data,p:PhaseHelper):
+        dev_data=chinopie.any_to(data,self.dev)
+        output=self.forward_train(dev_data)
+        loss=self.cal_loss_train(dev_data,output)
+        p.update_loss(loss.detach().cpu())
+
+        if self._clamp_grad is not None:
+            warnings.warn("The clamp_grad is on in evaluation recipe.")
+
+        output_cpu=chinopie.any_to(output,'cpu')
+        self.update_probe(data,output_cpu,p)
+        self.after_iter(data,output_cpu,'train')
+
 class ModelStateKeeper:
     def __init__(self,recipe:ModuleRecipe,model:nn.Module) -> None:
         self._is_training=model.training
