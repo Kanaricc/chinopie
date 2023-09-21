@@ -293,6 +293,17 @@ class EvaluationRecipe(ModuleRecipe):
         output_cpu=chinopie.any_to(output,'cpu')
         self.update_probe(data,output_cpu,p)
         self.after_iter(data,output_cpu,'train')
+    
+
+    def save_ckpt(self,ckpt:str,extra_state:Any):
+        # one can still export its own data
+        data={
+            'extra':extra_state,
+        }
+        custom_state=self.export_custom_state()
+        if custom_state is not None:
+            data['custom']=custom_state
+        torch.save(data,ckpt)
 
 class ModelStateKeeper:
     def __init__(self,recipe:ModuleRecipe,model:nn.Module) -> None:

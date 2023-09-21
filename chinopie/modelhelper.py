@@ -137,11 +137,11 @@ class ModelStaff:
     def __init__(
         self,
         file_helper: InstanceFileHelper,
-        prev_file_helper:Optional[InstanceFileHelper],
+        prev_file_helpers:Optional[List[InstanceFileHelper]],
         dev: str,
     ) -> None:
         self.file=file_helper
-        self.prev_file=prev_file_helper
+        self.prev_files=prev_file_helpers
 
         if dist.is_enabled():
             logger.info(
@@ -432,10 +432,10 @@ class TrainBootstrap:
         stage_comment=self._get_comment(stage)
         # find previous file helper
         if stage and stage>0:
-            prev_file_helper=self.file.get_exp_instance(f"{self._comment}({stage-1})")
+            prev_file_helpers=[self.file.get_exp_instance(f"{self._comment}({x})") for x in range(stage)]
             logger.debug("[BOOTSTRAP] found previous file helper")
         else:
-            prev_file_helper=None
+            prev_file_helpers=None
 
         self.study_file=self.file.get_exp_instance(stage_comment)
         if not os.path.exists("opts"):
@@ -491,7 +491,7 @@ class TrainBootstrap:
         assert num_epoch is not None
 
         try:
-            study.optimize(lambda x: self._wrapper_train(x,recipe,num_epoch,load_checkpoint,prev_file_helper,inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
+            study.optimize(lambda x: self._wrapper_train(x,recipe,num_epoch,load_checkpoint,prev_file_helpers,inherit_states,stage_comment), n_trials=n_trials, callbacks=[self._hook_trial_end], gc_after_trial=True)
         except optuna.TrialPruned:
             pass
         finally:
@@ -517,7 +517,7 @@ class TrainBootstrap:
         logger.warning("[BOOTSTRAP] good luck!")
         return self._inherit_states
 
-    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe,num_epoch:int,load_checkpoint:bool, prev_file_helper:Optional[InstanceFileHelper], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
+    def _wrapper_train(self, trial: optuna.Trial, recipe:ModuleRecipe,num_epoch:int,load_checkpoint:bool, prev_file_helpers:Optional[List[InstanceFileHelper]], inherit_states:Dict[str,Any], comment:str) -> Union[float, Sequence[float]]:
         self._hp_manager._set_trial(trial)
         # process user attrs
         trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
@@ -528,7 +528,7 @@ class TrainBootstrap:
         trial_file=self.file.get_exp_instance(f"{comment}_trial{trial_id}")
         self.staff = ModelStaff(
             file_helper=trial_file,
-            prev_file_helper=prev_file_helper,
+            prev_file_helpers=prev_file_helpers,
             dev=self._dev,
         )
         recipe._set_staff(self.staff)
@@ -750,7 +750,7 @@ class TrainBootstrap:
         best_file=self.file.get_exp_instance(stage_comment)
         staff = ModelStaff(
             file_helper=best_file,
-            prev_file_helper=None,
+            prev_file_helpers=None,
             dev=self._dev,
         )
         recipe._set_staff(staff)
