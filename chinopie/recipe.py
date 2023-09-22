@@ -146,6 +146,8 @@ class ModuleRecipe(ABC):
     
     def run_train_iter(self,data,p:PhaseHelper):
         dev_data=chinopie.any_to(data,self.dev)
+        self.before_iter(data,'train')
+
         output=self.forward_train(dev_data)
         loss=self.cal_loss_train(dev_data,output)
         p.update_loss(loss.detach().cpu())
@@ -162,7 +164,7 @@ class ModuleRecipe(ABC):
 
 
     def run_val_iter(self,data,p:PhaseHelper):
-        self.before_iter(data,'test')
+        self.before_iter(data,'val')
         with torch.no_grad():
             dev_data=chinopie.any_to(data,self.dev)
             output=self.forward_val(dev_data)

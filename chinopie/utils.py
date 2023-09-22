@@ -32,9 +32,12 @@ def copy_model(model:nn.Module,dev=None):
     else:
         return copy.deepcopy(model.cpu()).to(dev)
 
-def freeze_model(model:nn.Module):
-    for param in model.parameters():
-        param.requires_grad_(False)
+def freeze_model(model:nn.Module | nn.Parameter):
+    if isinstance(model,nn.Parameter):
+        model.requires_grad_(False)
+    else:
+        for param in model.parameters():
+            param.requires_grad_(False)
 
 def unfreeze_model(model:nn.Module):
     for param in model.parameters():
