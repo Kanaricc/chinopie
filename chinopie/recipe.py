@@ -283,6 +283,10 @@ class ModuleRecipe(ABC):
 
 
 class EvaluationRecipe(ModuleRecipe):
+    def run_train_phase(self, p: PhaseHelper):
+        _logger.info("skipped training phase in evaluation recipe.")
+        p.end_phase(0)
+
     def run_train_iter(self,data,p:PhaseHelper):
         dev_data=chinopie.any_to(data,self.dev)
         output=self.forward_train(dev_data)
@@ -295,7 +299,12 @@ class EvaluationRecipe(ModuleRecipe):
         output_cpu=chinopie.any_to(output,'cpu')
         self.update_probe(data,output_cpu,p)
         self.after_iter(data,output_cpu,'train')
-    
+
+
+    def switch_train(self, model):
+        # Set eval during training to avoid potential changes to models.
+        # But useless.
+        self.switch_eval(model)
 
     def save_ckpt(self,ckpt:str,extra_state:Any):
         # one can still export its own data
