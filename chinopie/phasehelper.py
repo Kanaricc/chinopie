@@ -121,12 +121,10 @@ class PhaseHelper:
     def validate_loss(loss: Tensor, panic: bool = True) -> bool:
         hasnan = loss.isnan().any().item()
         hasinf = loss.isinf().any().item()
-        hasneg = (loss < 0).any().item()
         if panic:
             assert not hasnan, f"loss function returns invalid value `nan`: {loss}"
             assert not hasinf, f"loss function returns invalid value `inf`: {loss}"
-            assert not hasneg, f"loss function returns negative value: {loss}"
-        return not hasnan and not hasinf and not hasneg
+        return not hasnan and not hasinf
 
     @staticmethod
     def validate_tensor(t: Tensor, panic: bool = True, msg: str = "") -> bool:
