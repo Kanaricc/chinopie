@@ -1,6 +1,6 @@
 # sample execution (requires torchvision)
 import copy
-from typing import List
+from typing import List, Optional
 import torch
 import numpy as np
 import math
@@ -80,7 +80,7 @@ class AveragePrecisionMeter:
 
         self.filenames += copy.deepcopy(filename)  # record filenames
 
-    def value(self):
+    def value(self, retain_topN:Optional[int]=None):
         """Returns the model's average precision for each class
         Return:
             ap (FloatTensor): 1xK tensor, with avg precision for each class k
@@ -96,14 +96,16 @@ class AveragePrecisionMeter:
             targets = self.targets[:, k]
             # compute average precision
             ap[k] = AveragePrecisionMeter.average_precision(
-                scores, targets, self.difficult_examples
+                scores, targets, self.difficult_examples,retain_topN
             )
         return ap
 
     @staticmethod
-    def average_precision(output, target, difficult_examples=True):
+    def average_precision(output, target, difficult_examples=True,retain_topN:Optional[int]=None):
         # sort examples
         sorted, indices = torch.sort(output, dim=0, descending=True)
+        if retain_topN is not None:
+            indices=indices[:retain_topN]
 
         # Computes prec@i
         pos_count = 0.0
