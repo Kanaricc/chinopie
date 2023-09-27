@@ -12,8 +12,8 @@ logger=get_logger(__name__)
 class MultiLabelSample(TypedDict):
     index:int
     name:str
-    image:Tensor
-    extra_image:Optional[Tensor]
+    image:Any
+    extra_image:Optional[Any]
     target:Tensor
 
 class MultiLabelDataset(abc.ABC,Dataset[MultiLabelSample]):
@@ -103,13 +103,17 @@ class MultiLabelLocalDataset(MultiLabelDataset):
         assert label_id<self._num_labels
         annotations=self.get_all_labels()
         res_ids=(annotations[:,label_id]==1).nonzero(as_tuple=True)[0]
-        
-        new_img_paths=[self._img_paths[i] for i in res_ids]
+        return self.filter_by_ids(res_ids)
+
+
+    def filter_by_ids(self,ids:List[int]|Tensor):
+        new_img_paths=[self._img_paths[i] for i in ids]
         if isinstance(self._annotations,list):
-            new_annotations=[self._annotations[i] for i in res_ids]
+            new_annotations=[self._annotations[i] for i in ids]
         else:
-            new_annotations=self._annotations[res_ids]
+            new_annotations=self._annotations[ids]
         return MultiLabelLocalDataset(new_img_paths,self._num_labels,new_annotations,self._annotation_labels,self._preprocess,self._extra_preprocess,self._negative1)
+    
 
     
     def __getitem__(self, index) -> MultiLabelSample:
