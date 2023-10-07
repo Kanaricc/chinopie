@@ -15,9 +15,10 @@ _logger=logging.get_logger(__name__)
 
 
 class ModuleRecipe(ABC):
-    def __init__(self, clamp_grad:Optional[float]=None,eval_on_nograd_module:bool=True):
+    def __init__(self, clamp_grad:Optional[float]=None,eval_on_nograd_module:bool=True,stop_backward:bool=False):
         self._clamp_grad=clamp_grad
         self._eval_on_nograd_module=eval_on_nograd_module
+        self._stop_backward=stop_backward
 
         self._cur_epoch:Optional[int]=None
         self._cur_batch:Optional[int]=None
@@ -152,11 +153,14 @@ class ModuleRecipe(ABC):
         loss=self.cal_loss_train(dev_data,output)
         p.update_loss(loss.detach().cpu())
 
-        self.optimizer.zero_grad()
-        loss.backward()
-        if self._clamp_grad is not None:
-            torch.nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(),max_norm=self._clamp_grad)
-        self.optimizer.step()
+        if not self._stop_backward:
+            self.optimizer.zero_grad()
+            loss.backward()
+            if self._clamp_grad is not None:
+                torch.nn.utils.clip_grad.clip_grad_norm_(self.model.parameters(),max_norm=self._clamp_grad)
+            self.optimizer.step()
+        else:
+            warnings.warn("backward is stopped")
 
         output_cpu=chinopie.any_to(output,'cpu')
         self.update_probe(data,output_cpu,p)
