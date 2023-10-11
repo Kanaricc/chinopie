@@ -731,13 +731,12 @@ class TrainBootstrap:
                 with open('instant_cmd','w') as f:
                     f.writelines(full_cmd[1:])
                 full_cmd=full_cmd[0]
-
-            if full_cmd in ['prune','pdb']:
-                logger.warning(f"received command `{full_cmd}`")
-                return full_cmd
-            else:
-                logger.warning(f"unknown command '{full_cmd}'")
-                return None
+                if full_cmd in ['prune','pdb']:
+                    logger.warning(f"received command `{full_cmd}`")
+                    return full_cmd
+                else:
+                    logger.warning(f"unknown command '{full_cmd}'")
+                    return None
         else:
             return None
     
