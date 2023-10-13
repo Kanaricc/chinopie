@@ -173,7 +173,7 @@ def prepare_voc07(root: str,ignore_difficult_label:bool=True):
         _logger.warning("done")
 
 class VOC2007Dataset(MultiLabelLocalDataset):
-    def __init__(self, root:str,preprocess:Any,extra_preprocess=None,phase='train',negatives_as_neg1=False) -> None:
+    def __init__(self, root:str,phase:str,preprocess:Any,extra_preprocess=None,negatives_as_neg1=False) -> None:
         assert phase in ["train","val","trainval","test"]
         prepare_voc07(root)
 
