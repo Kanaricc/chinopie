@@ -164,11 +164,13 @@ def merge_local_dataset(a:MultiLabelLocalDataset,b:MultiLabelLocalDataset):
 from .coco2014 import COCO2014Dataset
 from .voc2012 import VOC2012Dataset
 from .voc2007 import VOC2007Dataset
+from .nus_wide import NusWideDataset
 
 __all__=[
     "COCO2014Dataset",
     "VOC2012Dataset",
     "VOC2007Dataset",
+    "NusWideDataset",
     "MultiLabelDataset",
     "MultiLabelSample"
 ]
