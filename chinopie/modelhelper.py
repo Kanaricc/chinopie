@@ -40,20 +40,20 @@ class HyperparameterManager:
 
         self._fixed=False
     
-    def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None):
-        assert self._fixed==False, "cannot reg new parameter after fixed"
+    def reg_category(self, name: str, value: Optional[CategoricalChoiceType] = None, force:bool=False):
+        assert self._fixed==False or force, "cannot reg new parameter after fixed"
         if name not in self._arg_config:
             self._arg_parser.add_argument(f"--{name}",required=False)
             self._arg_config[name] = value
 
-    def reg_int(self, name: str, value: Optional[int] = None):
-        assert self._fixed==False, "cannot reg new parameter after fixed"
+    def reg_int(self, name: str, value: Optional[int] = None, force:bool=False):
+        assert self._fixed==False or force, "cannot reg new parameter after fixed"
         if name not in self._arg_config:
             self._arg_parser.add_argument(f"--{name}",type=int,required=False)
             self._arg_config[name] = value
 
-    def reg_float(self, name: str, value: Optional[float] = None):
-        assert self._fixed==False, "cannot reg new parameter after fixed"
+    def reg_float(self, name: str, value: Optional[float] = None, force:bool=False):
+        assert self._fixed==False or force, "cannot reg new parameter after fixed"
         if name not in self._arg_config:
             self._arg_parser.add_argument(f"--{name}",type=float,required=False)
             self._arg_config[name] = value
