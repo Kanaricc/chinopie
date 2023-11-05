@@ -10,52 +10,28 @@ from tqdm import tqdm
 
 from .probes import AverageMeter,SmoothMeanMeter
 from . import iddp as dist
-from .utils import any_to
+from .utils import any_to,validate_loss,validate_tensor
 from . import logging
 _logger=logging.get_logger(__name__)
 
-class FunctionalSection:
-    class JumpSectionException(Exception):
-        pass
-
-    def __init__(self,break_phase:bool,report_cb:Optional[Callable[[Dict[str,Any]],None]]=None) -> None:
-        self._break_phase=break_phase
-        self._state:Dict[str,Any]={}
-        self._report_cb=report_cb
-
-    def set(self,key:str,val:Any=True):
-        self._state[key]=val
-
-    def __enter__(self):
-        if self._break_phase:
-            sys.settrace(lambda *args,**keys: None)
-            frame=sys._getframe(1)
-            frame.f_trace=self.trace
-        return self
-    
-    def trace(self,frame,event,arg):
-        raise self.JumpSectionException()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        if exc_type and issubclass(exc_type,self.JumpSectionException):
-            return True
-        
-        if self._report_cb:
-            self._report_cb(self._state)
-
-
-class PhaseHelper:
+class PhaseEnv:
     def __init__(
             self,
             phase_name: str,
             dataset: Any,
             dataloader: DataLoader,
             dev:Any,
-            dry_run: bool = False,
             custom_probes: List[str] = [],
+            dry_run: bool = False,
+            log_sample:bool=False,
+            check_loss:bool=True,
+            check_score:bool=True,
     ) -> None:
         self._phase_name = phase_name
         self._dry_run = dry_run
+        self._do_log_sample=log_sample
+        self._do_check_loss=check_loss
+        self._do_check_score=check_score
         self._dataset = dataset
         self._dataloader = dataloader
         self._dev=dev
@@ -81,11 +57,11 @@ class PhaseHelper:
         batch_len = len(self._dataloader)
         one_percent_len=max(1,(batch_len+25-1)//25)
         if dist.is_main_process():
-            if self._dry_run:
+            if self._do_log_sample:
                 _logger.info("data preview can be found in log")
             with tqdm(total=batch_len,dynamic_ncols=True,ascii=' >=') as progressbar:
                 for batchi, data in enumerate(self._dataloader):
-                    if self._dry_run:
+                    if self._do_log_sample:
                         # torch.set_printoptions(profile='full')
                         _logger.debug(data)
                         # torch.set_printoptions(profile='default')
@@ -96,7 +72,7 @@ class PhaseHelper:
                     if batchi%one_percent_len==0:
                         _logger.debug(f"progress {batchi}/{batch_len}: {postfix}")
                     if self._dry_run and batchi>=2:
-                        break
+                            break
         else:
             for batchi, data in enumerate(self._dataloader):
                 yield batchi, data
@@ -104,9 +80,9 @@ class PhaseHelper:
                     break
     
     def _check_update(self):
-        if not self._score_updated:
+        if self._do_check_score and not self._score_updated:
             _logger.error(f"no score updated during phase {self._phase_name}")
-        if not self._loss_updated:
+        if self._do_check_loss and not self._loss_updated:
             _logger.error(f"no loss updated during phase {self._phase_name}")
 
         for name in self._custom_probe_name:
@@ -119,23 +95,11 @@ class PhaseHelper:
 
     @staticmethod
     def validate_loss(loss: Tensor, panic: bool = True) -> bool:
-        hasnan = loss.isnan().any().item()
-        hasinf = loss.isinf().any().item()
-        if panic:
-            assert not hasnan, f"loss function returns invalid value `nan`: {loss}"
-            assert not hasinf, f"loss function returns invalid value `inf`: {loss}"
-        return not hasnan and not hasinf
+        return validate_loss(loss,panic)
 
     @staticmethod
     def validate_tensor(t: Tensor, panic: bool = True, msg: str = "") -> bool:
-        hasnan = t.isnan().any().item()
-        hasinf = t.isinf().any().item()
-
-        if panic:
-            assert not hasnan, f"tensor has invalid value `nan`: {t} ({msg})"
-            assert not hasinf, f"tensor has invalid value `inf`: {t} ({msg})"
-
-        return not hasnan and not hasinf
+        return validate_tensor(t,panic,msg)
 
     def update_loss(self, loss: Tensor, n: int = 1):
         self._loss_updated = True

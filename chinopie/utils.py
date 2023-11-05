@@ -173,6 +173,14 @@ def validate_tensor(t: Tensor, panic: bool = True, msg: str = "") -> bool:
 
     return not hasnan and not hasinf
 
+def validate_loss(loss: Tensor, panic: bool = True) -> bool:
+    hasnan = loss.isnan().any().item()
+    hasinf = loss.isinf().any().item()
+    if panic:
+        assert not hasnan, f"loss function returns invalid value `nan`: {loss}"
+        assert not hasinf, f"loss function returns invalid value `inf`: {loss}"
+    return not hasnan and not hasinf
+
 def get_env(name:str):
     res=os.environ.get(name)
     assert res is not None, f"enviroment variable `{name}` required"

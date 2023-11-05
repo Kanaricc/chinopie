@@ -25,7 +25,7 @@ from .datasets.fakeset import FakeEmptySet
 from . import iddp as dist
 from .filehelper import GlobalFileHelper,InstanceFileHelper
 from .phasehelper import (
-    PhaseHelper,
+    PhaseEnv,
 )
 from .utils import show_params_in_3cols,create_snapshot,check_gitignore,set_fixed_seed
 from .logging import get_logger,set_logger_file,set_verbosity
@@ -240,7 +240,7 @@ class ModelStaff:
     def _reg_scheduler(self,scheduler:LRScheduler):
         self._scheduler=scheduler
     
-    def update_tb(self, epochi:int, phase: PhaseHelper, tbwriter:SummaryWriter):
+    def update_tb(self, epochi:int, phase: PhaseEnv, tbwriter:SummaryWriter):
         assert phase._phase_name in ["train", "val", "test"]
         if dist.is_enabled():
             phase.loss_probe._sync_dist_nodes()
@@ -590,7 +590,7 @@ class TrainBootstrap:
                 continue
             
             self._prepare_dataloader_for_epoch(self.staff._dataloader_train)
-            phase_train=PhaseHelper(
+            phase_train=PhaseEnv(
                 "train",
                 self.staff._data_train,
                 self.staff._dataloader_train,
@@ -603,7 +603,7 @@ class TrainBootstrap:
             self._end_phase(epochi,phase_train)
 
             self._prepare_dataloader_for_epoch(self.staff._dataloader_val)
-            phase_val=PhaseHelper(
+            phase_val=PhaseEnv(
                 "val",
                 self.staff._data_val,
                 self.staff._dataloader_val,
@@ -618,7 +618,7 @@ class TrainBootstrap:
 
             if self.staff._get_flag('test_data_set'):
                 self._prepare_dataloader_for_epoch(self.staff._dataloader_test)
-                phase_test=PhaseHelper(
+                phase_test=PhaseEnv(
                     "test",
                     self.staff._data_test,
                     self.staff._dataloader_test,
@@ -707,7 +707,7 @@ class TrainBootstrap:
             logger.info("update inherit states")
         del self._latest_states
     
-    def _end_phase(self,epochi:int,phase:PhaseHelper):
+    def _end_phase(self,epochi:int,phase:PhaseEnv):
         self.staff.update_tb(epochi,phase,self.tbwriter)
         if not dist.is_enabled():
             for k,v in phase.custom_probes.items():
