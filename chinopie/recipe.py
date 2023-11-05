@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 import chinopie
-from chinopie.modelhelper import ModelStaff,PhaseHelper,HyperparameterManager
+from chinopie.modelhelper import ModelStaff,PhaseEnv,HyperparameterManager
 
 from . import logging
 _logger=logging.get_logger(__name__)
@@ -103,7 +103,7 @@ class ModuleRecipe(ABC):
         if model is None:model=self.model
         chinopie.set_eval(model)
     
-    def run_train_phase(self,p:PhaseHelper):
+    def run_train_phase(self,p:PhaseEnv):
         self.switch_train(self.model)
         state_before=self.model.training
         self._total_batch=p._batch_len
@@ -117,7 +117,7 @@ class ModuleRecipe(ABC):
             warnings.warn("The model is not set for training during train phase. Please understand what you have done.")
         p.end_phase(self.report_score('train'))
 
-    def run_val_phase(self,p:PhaseHelper):
+    def run_val_phase(self,p:PhaseEnv):
         self.switch_eval(self.model)
         state_before=self.model.training
         self._total_batch=p._batch_len
@@ -131,7 +131,7 @@ class ModuleRecipe(ABC):
             warnings.warn("The model is not set for evaluating during val phase. Please understand what you have done.")
         p.end_phase(self.report_score('val'))
 
-    def run_test_phase(self,p:PhaseHelper):
+    def run_test_phase(self,p:PhaseEnv):
         self.switch_eval(self.model)
         state_before=self.model.training
         self._total_batch=p._batch_len
@@ -145,9 +145,9 @@ class ModuleRecipe(ABC):
             warnings.warn("The model is not set for evaluating during val phase. Please understand what you have done.")
         p.end_phase(self.report_score('test'))
     
-    def run_train_iter(self,data,p:PhaseHelper):
+    def run_train_iter(self,data,p:PhaseEnv):
         dev_data=chinopie.any_to(data,self.dev)
-        self.before_iter(data,'train')
+        self.before_iter_train(data)
 
         output=self.forward_train(dev_data)
         loss=self.cal_loss_train(dev_data,output)
@@ -163,33 +163,33 @@ class ModuleRecipe(ABC):
             warnings.warn("backward is stopped")
 
         output_cpu=chinopie.any_to(output,'cpu')
-        self.update_probe(data,output_cpu,p)
-        self.after_iter(data,output_cpu,'train')
+        self.update_probe_train(data,output_cpu,p)
+        self.after_iter_train(data,output_cpu)
 
 
-    def run_val_iter(self,data,p:PhaseHelper):
-        self.before_iter(data,'val')
+    def run_val_iter(self,data,p:PhaseEnv):
+        self.before_iter_val(data)
         with torch.no_grad():
             dev_data=chinopie.any_to(data,self.dev)
             output=self.forward_val(dev_data)
             loss=self.cal_loss_val(dev_data,output)
             p.update_loss(loss.detach().cpu())
             output_cpu=chinopie.any_to(output,'cpu')
-            self.update_probe(data,output_cpu,p)
+            self.update_probe_val(data,output_cpu,p)
 
-        self.after_iter(data,output_cpu,'val')
+        self.after_iter_val(data,output_cpu)
     
-    def run_test_iter(self,data,p:PhaseHelper):
-        self.before_iter(data,'test')
+    def run_test_iter(self,data,p:PhaseEnv):
+        self.before_iter_test(data)
         with torch.no_grad():
             dev_data=chinopie.any_to(data,self.dev)
             output=self.forward_test(dev_data)
             loss=self.cal_loss_test(dev_data,output)
             p.update_loss(loss.detach().cpu())
             output_cpu=chinopie.any_to(output,'cpu')
-            self.update_probe(data,output_cpu,p)
+            self.update_probe_test(data,output_cpu,p)
         
-        self.after_iter(data,output_cpu,'test')
+        self.after_iter_test(data,output_cpu)
     
     def forward_train(self,data)->Any:
         return self.forward(data)
@@ -217,14 +217,41 @@ class ModuleRecipe(ABC):
     def cal_loss(self,data,output)->Tensor:
         raise NotImplementedError()
     
-    def update_probe(self,data,output,p:PhaseHelper):
+    def update_probe_train(self,data,output,p:PhaseEnv):
+        self.update_probe(data,output,p)
+    
+    def update_probe_val(self,data,output,p:PhaseEnv):
+        self.update_probe(data,output,p)
+    
+    def update_probe_test(self,data,output,p:PhaseEnv):
+        self.update_probe(data,output,p)
+    
+    def update_probe(self,data,output,p:PhaseEnv):
         """
         update managed custom probe here
         """
         pass
 
-    def before_iter(self,data,phase:str):
+    def before_iter_train(self,data):
+        self.before_iter(data)
+    
+    def before_iter_val(self,data):
+        self.before_iter(data)
+    
+    def before_iter_test(self,data):
+        self.before_iter(data)
+
+    def before_iter(self,data):
         ...
+    
+    def after_iter_train(self,data,output):
+        self.after_iter(data,output,'train')
+
+    def after_iter_val(self,data,output):
+        self.after_iter(data,output,'val')
+
+    def after_iter_test(self,data,output):
+        self.after_iter(data,output,'test')
     
     def after_iter(self,data,output,phase:str):
         """
@@ -243,7 +270,7 @@ class ModuleRecipe(ABC):
         data=torch.load(ckpt,map_location=self.dev)
         if 'custom' in ckpt:
             self.import_custom_state(data['custom'])
-        self.model.load_state_dict(data['model'])
+        self.model.load_state_dict(data['model']) # this is done after custom state loaded
         self.optimizer.load_state_dict(data['optimizer'])
         if self.scheduler is not None:
             self.scheduler.load_state_dict(data['scheduler'])
@@ -287,18 +314,18 @@ class ModuleRecipe(ABC):
 
 
 class EvaluationRecipe(ModuleRecipe):
-    def run_train_phase(self, p: PhaseHelper):
+    def __init__(self):
+        super().__init__(clamp_grad=None, eval_on_nograd_module=False, stop_backward=True)
+
+    def run_train_phase(self, p: PhaseEnv):
         _logger.info("skipped training phase in evaluation recipe.")
         p.end_phase(0)
 
-    def run_train_iter(self,data,p:PhaseHelper):
+    def run_train_iter(self,data,p:PhaseEnv):
         dev_data=chinopie.any_to(data,self.dev)
         output=self.forward_train(dev_data)
         loss=self.cal_loss_train(dev_data,output)
         p.update_loss(loss.detach().cpu())
-
-        if self._clamp_grad is not None:
-            warnings.warn("The clamp_grad is on in evaluation recipe.")
 
         output_cpu=chinopie.any_to(output,'cpu')
         self.update_probe(data,output_cpu,p)
@@ -311,7 +338,7 @@ class EvaluationRecipe(ModuleRecipe):
         self.switch_eval(model)
 
     def save_ckpt(self,ckpt:str,extra_state:Any):
-        # one can still export its own data
+        # Avoid saving useless data. One can still export its own data.
         data={
             'extra':extra_state,
         }
