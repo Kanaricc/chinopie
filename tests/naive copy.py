@@ -24,21 +24,25 @@ class Recipe2(ModuleRecipe):
     def __init__(self):
         super().__init__()
     
-    def prepare(self, hp: HyperparameterManager, staff: ModelStaff):
+    def ask_hyperparameter(self, hp: HyperparameterManager):
+        self.batch_size=hp.suggest_int('batch_size',1,10)
+        self.lr=hp.suggest_float('lr',1e-5,1e-1,log=True)
+    
+    def prepare(self, staff: ModelStaff):
         trainset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         valset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         testset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
-        trainloader=DataLoader(trainset,hp.suggest_int('batch_size',1,10))
-        valloader=DataLoader(valset,hp.suggest_int('batch_size',1,10))
-        testloader=DataLoader(testset,hp.suggest_int('batch_size',1,10))
+        trainloader=DataLoader(trainset,self.batch_size)
+        valloader=DataLoader(valset,self.batch_size)
+        testloader=DataLoader(testset,self.batch_size)
         staff.reg_dataset(trainset,trainloader,valset,valloader)
         staff.reg_test_dataset(testset,testloader)
 
         model=Model()
         staff.reg_model(model)
     
-    def set_optimizers(self, model, hp: HyperparameterManager) -> Optimizer:
-        return torch.optim.AdamW(model.parameters(),lr=hp.suggest_float('lr',1e-5,1e-1,log=True))
+    def set_optimizers(self, model) -> Optimizer:
+        return torch.optim.AdamW(model.parameters(),lr=self.lr)
     
     def forward(self, data) -> Tensor:
         return self.model(data['input'])

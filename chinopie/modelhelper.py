@@ -213,8 +213,8 @@ class ModelStaff:
         self._dataloader_val.worker_init_fn=worker_init_fn
 
         if dist.is_enabled():
-            assert isinstance(self._dataloader_train.sampler, DistributedSampler)
-            assert not isinstance(self._dataloader_val.sampler, DistributedSampler)
+            assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
+            assert not isinstance(self._dataloader_val.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
             logger.debug("ddp enabled, checked distributed sampler in train and val set")
 
     def reg_test_dataset(self, test: Any, testloader: DataLoader):
@@ -226,14 +226,18 @@ class ModelStaff:
         self._dataloader_test.worker_init_fn=worker_init_fn
 
         if dist.is_enabled():
-            assert not isinstance(self._dataloader_test.sampler, DistributedSampler)
+            assert not isinstance(self._dataloader_test.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
             logger.debug("ddp enabled, checked distributed sampler in test set")
     
     def reg_model(self,model:nn.Module):
         self._model=model
     
-    def prepare(self):
+    def prepare(self,rank:Optional[int]):
         self._model=self._model.to(self.dev)
+        if dist.is_enabled():
+            assert rank is not None
+            self._raw_model=self._model
+            self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank])
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer

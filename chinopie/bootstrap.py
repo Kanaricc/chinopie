@@ -44,7 +44,7 @@ class TrainBootstrap:
         checkpoint_save_period: int = 1,
         enable_snapshot=False,
         enable_prune=False,
-        enable_ddp=False,
+        world_size:int=1,
         seed:Optional[Any]=None,
         dev="",
         diagnose=False,
@@ -75,15 +75,16 @@ class TrainBootstrap:
         self._checkpoint_save_period = checkpoint_save_period
         self._dev = args.dev
         self._diagnose_mode = args.diagnose
+        self._verbose:bool=args.verbose
         self._enable_prune=enable_prune
-        self._do_enable_ddp=enable_ddp
+        self._world_size=world_size
 
-        self._init_logger(args.verbose)
+        _init_logger(self._comment,self._verbose)
 
         self.file=GlobalFileHelper(disk_root)
 
         # set ddp
-        if self._do_enable_ddp:
+        if self._world_size>1:
             dist.enable_ddp()
             logger.info("[BOOTSTRAP] enable DDP")
 
@@ -149,18 +150,6 @@ class TrainBootstrap:
     def _init_ddp(self):
         logger.info("[BOOTSTRAP] initialized ddp")
 
-    def _init_logger(self,verbose:bool):
-        # logger file
-        if not os.path.exists("logs"):
-            os.mkdir("logs")
-        
-        # TODO: handle ddp
-        set_logger_file(f"logs/log_{self._comment}.log")
-        if verbose:
-            set_verbosity(logging.DEBUG)
-        else:
-            set_verbosity(logging.INFO)
-        logger.info("[BOOTSTRAP] initialized logger")
     
     # def _report_info(self,helper:ModelStaff,board_dir:str):
     #     dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
@@ -287,14 +276,18 @@ class TrainBootstrap:
                 
                 # create checkpoint dir
                 trial_file.prepare_checkpoint_dir()
-                # create board dir before training
-                self.tbwriter = SummaryWriter(trial_file.default_board_dir)
+                # assign hyperparamter
+                recipe.ask_hyperparameter(self._hp_manager)
+
 
                 try:
-                    scores=_wrapper_train(
+                    import pdb
+                    pdb.set_trace()
+
+                    scores= 0.0 # TODO: find how to catch the score
+                    mp.spawn(_wrapper_train,( # type: ignore
                         trial,
                         recipe,
-                        self._hp_manager,
                         num_epoch,
                         load_checkpoint,
                         self._save_checkpoint,
@@ -302,12 +295,30 @@ class TrainBootstrap:
                         self._checkpoint_save_period,
                         trial_file,
                         prev_file_helpers,
-                        self.tbwriter,
                         direction,
                         inf_score,
                         self._dev,
-                        self._diagnose_mode
-                    )
+                        self._diagnose_mode,
+                        self._comment,
+                        self._verbose
+                    ),nprocs=self._world_size,join=True)
+                    # _wrapper_train(
+                    #     1,
+                    #     trial,
+                    #     recipe,
+                    #     num_epoch,
+                    #     load_checkpoint,
+                    #     self._save_checkpoint,
+                    #     self._enable_prune,
+                    #     self._checkpoint_save_period,
+                    #     trial_file,
+                    #     prev_file_helpers,
+                    #     direction,
+                    #     inf_score,
+                    #     self._dev,
+                    #     self._diagnose_mode
+                    # )
+
                     # append all params (suggested and fixed) into attrs
                     trial.set_user_attr('params',self._hp_manager.params)
 
@@ -343,9 +354,9 @@ class TrainBootstrap:
 
 
 def _wrapper_train(
+        rank:int,
         trial: optuna.Trial,
         recipe:ModuleRecipe,
-        hp_manager:HyperparameterManager,
         num_epoch:int,
         load_checkpoint:bool,
         save_checkpoint:bool,
@@ -353,25 +364,31 @@ def _wrapper_train(
         checkpoint_save_period:int,
         trial_file:InstanceFileHelper,
         prev_file_helpers:Optional[List[InstanceFileHelper]],
-        tbwriter:SummaryWriter,
         direction:str,
         inf_score:float,
         dev:Any,
         diagnose_mode:bool,
+        study_comment:str,
+        verbose:bool,
     ):
+    _init_logger(study_comment,verbose)
+
     best_score=inf_score
+    # create board dir before training
+    tbwriter = SummaryWriter(trial_file.default_board_dir)
 
     staff = ModelStaff(
         file_helper=trial_file,
         prev_file_helpers=prev_file_helpers,
         dev=dev,
     )
+
     recipe._set_staff(staff)
-    recipe.prepare(hp_manager,staff)
-    staff.prepare()
+    recipe.prepare(staff)
+    staff.prepare(rank)
     # set optimizer
-    staff._reg_optimizer(recipe.set_optimizers(staff._model,hp_manager))
-    _scheduler=recipe.set_scheduler(staff._optimizer,hp_manager)
+    staff._reg_optimizer(recipe.set_optimizers(staff._model))
+    _scheduler=recipe.set_scheduler(staff._optimizer)
     if _scheduler is not None:
         staff._reg_scheduler(_scheduler)
     del _scheduler
@@ -379,7 +396,6 @@ def _wrapper_train(
     assert staff._get_flag('trainval_data_set'), "train or val set not set"
     if not staff._get_flag('test_data_set'):
         logger.warning("test set not set. test phase will be skipped.")
-    
     
     recovered_epoch=None
     if load_checkpoint:
@@ -394,8 +410,10 @@ def _wrapper_train(
             recovered_epoch=state['cur_epochi']
             best_score=state['best_score']
 
+    # wait for all threads to load ckpt
     if dist.is_enabled():
         dist.barrier()
+
     logger.warning("ready to train model")
     recipe._total_epoch=num_epoch
     recipe.before_start()
@@ -504,7 +522,9 @@ def _wrapper_train(
         trial.report(score,epochi)
         # early stop
         if enable_prune and trial.should_prune():
-            raise optuna.TrialPruned()
+            dist.barrier()
+            # TODO: leave a flag for main thread to determine the status
+            break
         
         instant_cmd=_check_instant_cmd()
         if instant_cmd=='prune':
@@ -513,6 +533,7 @@ def _wrapper_train(
         elif instant_cmd=='pdb':
             logger.warning("entering pdb")
             pdb.set_trace()
+    
     recipe.end(staff)
     return best_score
 
@@ -553,3 +574,21 @@ def _check_instant_cmd():
                 return None
     else:
         return None
+
+
+def _init_logger(comment:str,verbose:bool):
+    # logger file
+    if not os.path.exists("logs"):
+        os.mkdir("logs")
+    
+    # TODO: handle ddp
+    if not dist.is_enabled():
+        set_logger_file(f"logs/log_{comment}.log")
+    else:
+        set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
+
+    if verbose:
+        set_verbosity(logging.DEBUG)
+    else:
+        set_verbosity(logging.INFO)
+    logger.info("[BOOTSTRAP] initialized logger")

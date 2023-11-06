@@ -4,9 +4,10 @@ from typing import List, Optional
 import torch
 import numpy as np
 import math
-
+import warnings
 from torch.functional import Tensor
 
+from .. import iddp as dist
 class AveragePrecisionMeter:
     """
     The APMeter measures the average precision per class.
@@ -23,6 +24,9 @@ class AveragePrecisionMeter:
 
     def __init__(self, difficult_examples=False):
         super(AveragePrecisionMeter, self).__init__()
+        if dist.is_enabled():
+            warnings.warn("AP Meter may not work properly with DDP. Do not trust the results if DDP sampler is used for dataset!")
+
         self.reset()
         self.difficult_examples = difficult_examples
 

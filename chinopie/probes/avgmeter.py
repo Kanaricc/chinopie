@@ -4,6 +4,7 @@ from torch import Tensor
 import torch
 from torch.types import Number
 from collections import deque
+from .. import iddp as dist
 
 class SmoothMeanMeter:
     def __init__(self,length:int,level1:float=0.1,level2:float=0.25,level3:float=0.5) -> None:
@@ -20,6 +21,7 @@ class SmoothMeanMeter:
         raise NotImplemented
 
     def __str__(self):
+        # TODO: sync
         t=[x/norm for x,norm in zip(self._qs,self._norm)]
         return ', '.join(map(lambda x: f"{x:.2f}",t))
 
@@ -45,7 +47,12 @@ class AverageMeter:
         return self._cnt!=0
 
     def average(self) -> float:
-        return self._avg
+        if not dist.is_enabled():
+            x=self._avg
+        else:
+            peer_x=torch.tensor(self._avg)
+            x=dist.reduce(peer_x,dst=0)/dist.get_world_size() # type: ignore
+        return x
 
     def value(self) -> Number:
         return self._val

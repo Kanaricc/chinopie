@@ -26,8 +26,11 @@ class ModuleRecipe(ABC):
         self._total_batch:Optional[int]=None
         pass
 
+    def ask_hyperparameter(self,hp:HyperparameterManager):
+        pass
 
-    def prepare(self,hp:HyperparameterManager,staff:ModelStaff):
+
+    def prepare(self,staff:ModelStaff):
         """
         prepare models and probes here
         """
@@ -44,10 +47,10 @@ class ModuleRecipe(ABC):
         ...
 
     @abstractmethod
-    def set_optimizers(self,model,hp:HyperparameterManager)->Optimizer:
+    def set_optimizers(self,model)->Optimizer:
         ...
 
-    def set_scheduler(self,optimizer:Optimizer,hp:HyperparameterManager)->Optional[LRScheduler]:
+    def set_scheduler(self,optimizer:Optimizer)->Optional[LRScheduler]:
         _logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
         return None
     
