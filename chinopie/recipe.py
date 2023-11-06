@@ -27,7 +27,7 @@ class ModuleRecipe(ABC):
         pass
 
 
-    def prepare(self,hp:HyperparameterManager,staff:ModelStaff,inherited_states:Dict[str,Any]):
+    def prepare(self,hp:HyperparameterManager,staff:ModelStaff):
         """
         prepare models and probes here
         """
@@ -40,15 +40,14 @@ class ModuleRecipe(ABC):
         """
         pass
 
-    def end(self,helper:ModelStaff)->Dict[str,Any]:
-        _logger.info("pass empty state to next stage")
-        return {}
-
-    @abstractmethod
-    def set_optimizers(self,model,hp:HyperparameterManager,staff:ModelStaff)->Optimizer:
+    def end(self,helper:ModelStaff):
         ...
 
-    def set_scheduler(self,optimizer:Optimizer,hp:HyperparameterManager,staff:ModelStaff)->Optional[LRScheduler]:
+    @abstractmethod
+    def set_optimizers(self,model,hp:HyperparameterManager)->Optimizer:
+        ...
+
+    def set_scheduler(self,optimizer:Optimizer,hp:HyperparameterManager)->Optional[LRScheduler]:
         _logger.info(f"no scheduler set for optimizer `{type(optimizer)}`")
         return None
     
