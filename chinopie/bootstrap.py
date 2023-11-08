@@ -596,7 +596,7 @@ def _init_logger(comment:str,verbose:bool):
     else:
         set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
 
-    if verbose:
+    if verbose or not dist.is_main_process():
         set_verbosity(logging.DEBUG)
     else:
         set_verbosity(logging.INFO)
