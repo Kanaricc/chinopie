@@ -591,7 +591,7 @@ def _init_logger(comment:str,verbose:bool):
     if not os.path.exists("logs"):
         os.mkdir("logs")
     
-    if not dist.is_enabled():
+    if not dist.is_initialized():
         set_logger_file(f"logs/log_{comment}.log")
     else:
         set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
