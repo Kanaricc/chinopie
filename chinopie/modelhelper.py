@@ -212,7 +212,7 @@ class ModelStaff:
         self._dataloader_train.worker_init_fn=worker_init_fn
         self._dataloader_val.worker_init_fn=worker_init_fn
 
-        if dist.is_enabled():
+        if dist.is_initialized():
             assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
             assert not isinstance(self._dataloader_val.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
             logger.debug("ddp enabled, checked distributed sampler in train and val set")
@@ -225,7 +225,7 @@ class ModelStaff:
 
         self._dataloader_test.worker_init_fn=worker_init_fn
 
-        if dist.is_enabled():
+        if dist.is_initialized():
             assert not isinstance(self._dataloader_test.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
             logger.debug("ddp enabled, checked distributed sampler in test set")
     

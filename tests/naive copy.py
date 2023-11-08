@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 from torch.optim import Optimizer
-from chinopie import HyperparameterManager, ModelStaff,ModuleRecipe,TrainBootstrap
+from chinopie import HyperparameterManager, ModelStaff,ModuleRecipe,TrainBootstrap,DistributedSampler
 from chinopie.datasets.fakeset import FakeRandomSet
 
 class Model(nn.Module):
@@ -32,7 +32,7 @@ class Recipe2(ModuleRecipe):
         trainset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         valset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         testset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
-        trainloader=DataLoader(trainset,self.batch_size)
+        trainloader=DataLoader(trainset,self.batch_size,sampler=DistributedSampler(trainset))
         valloader=DataLoader(valset,self.batch_size)
         testloader=DataLoader(testset,self.batch_size)
         staff.reg_dataset(trainset,trainloader,valset,valloader)

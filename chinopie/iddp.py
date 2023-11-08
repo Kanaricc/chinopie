@@ -1,5 +1,6 @@
 import torch.distributed as dist
 from torch.distributed import * # type:ignore
+from torch.utils.data.distributed import DistributedSampler
 
 _ddp_enabled=False
 
