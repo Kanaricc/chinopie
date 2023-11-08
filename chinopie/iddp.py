@@ -11,4 +11,4 @@ def is_enabled():
     return _ddp_enabled
 
 def is_main_process():
-    return not _ddp_enabled or dist.get_rank()==0
+    return not dist.is_initialized() or dist.get_rank()==0

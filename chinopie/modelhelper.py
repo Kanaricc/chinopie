@@ -144,12 +144,9 @@ class ModelStaff:
         self.file=file_helper
         self.prev_files=prev_file_helpers
 
-        if dist.is_enabled():
+        if dist.is_initialized():
             logger.info(
                 f"[DDP] ddp is enabled. current rank is {dist.get_rank()}."
-            )
-            logger.info(
-                f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
             )
 
             if dist.is_main_process():
@@ -170,6 +167,9 @@ class ModelStaff:
                     f"[DDP] world_size is larger than the number of devices. assume use CPU."
                 )
                 self.dev = f"cpu:{dist.get_rank()}"
+            logger.info(
+                f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
+            )
         else:
             if dev == "":
                 if torch.cuda.is_available():
@@ -234,7 +234,7 @@ class ModelStaff:
     
     def prepare(self,rank:Optional[int]):
         self._model=self._model.to(self.dev)
-        if dist.is_enabled():
+        if dist.is_initialized():
             assert rank is not None
             self._raw_model=self._model
             self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank])
@@ -247,24 +247,24 @@ class ModelStaff:
     
     def update_tb(self, epochi:int, phase: PhaseEnv, tbwriter:SummaryWriter):
         assert phase._phase_name in ["train", "val", "test"]
-        if dist.is_enabled():
-            phase.loss_probe._sync_dist_nodes()
-            phase._score._sync_dist_nodes()
-            for k in phase.custom_probes:
-                phase.custom_probes[k]._sync_dist_nodes()
-
         # only log probes in main process
+        average_loss=phase.loss_probe.average()
         if dist.is_main_process():
             tbwriter.add_scalar(
-                f"loss/{phase._phase_name}", phase.loss_probe.average(), epochi
+                f"loss/{phase._phase_name}", average_loss, epochi
             )
-            tbwriter.add_scalar(f"score/{phase._phase_name}", phase.score, epochi)
-
-            for k in self._custom_probes:
-                if phase.custom_probes[k].has_data():
+        
+        average_score=phase.score()
+        if dist.is_main_process():
+            tbwriter.add_scalar(f"score/{phase._phase_name}", average_score, epochi) # ????? stuck here
+        
+        for k in self._custom_probes:
+            if phase.custom_probes[k].has_data():
+                average_value=phase.custom_probes[k].average()
+                if dist.is_main_process():
                     tbwriter.add_scalar(
                         f"{k}/{phase._phase_name}",
-                        phase.custom_probes[k].average(),
+                        average_value,
                         epochi,
                     )
 

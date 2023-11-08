@@ -1,4 +1,5 @@
 import math
+from typing import Optional,Any
 
 from torch import Tensor
 import torch
@@ -17,8 +18,6 @@ class SmoothMeanMeter:
         self._norm=[qs*d+1 for qs,d in zip(self._norm,self._decays)]
         self._qs=[qs*d+x for qs,d in zip(self._qs,self._decays)]
     
-    def _sync_dist_nodes(self):
-        raise NotImplemented
 
     def __str__(self):
         # TODO: sync
@@ -26,16 +25,15 @@ class SmoothMeanMeter:
         return ', '.join(map(lambda x: f"{x:.2f}",t))
 
 class AverageMeter:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str,dev:Any) -> None:
         self.name = name
         self._val = 0
         self._sum = 0
         self._cnt = 0
         self._avg=0
+        self._dev=dev
         pass
 
-    def _sync_dist_nodes(self):
-        raise NotImplemented
 
     def update(self, val: Number, n=1):
         self._val = val
@@ -46,13 +44,14 @@ class AverageMeter:
     def has_data(self):
         return self._cnt!=0
 
-    def average(self) -> float:
-        if not dist.is_enabled():
+    def average(self) -> Optional[float]:
+        if not dist.is_initialized():
             x=self._avg
+            return x
         else:
-            peer_x=torch.tensor(self._avg)
-            x=dist.reduce(peer_x,dst=0)/dist.get_world_size() # type: ignore
-        return x
+            x=torch.tensor(self._avg,device=self._dev)
+            dist.reduce(x,dst=0)
+            return (x/dist.get_world_size()).item() # type: ignore
 
     def value(self) -> Number:
         return self._val

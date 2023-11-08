@@ -39,11 +39,11 @@ class PhaseEnv:
 
         self._custom_probe_name = custom_probes
 
-        self._score = AverageMeter("")
-        self._loss_probe = AverageMeter("")
+        self._score = AverageMeter("",dev)
+        self._loss_probe = AverageMeter("",dev)
         self._realtime_loss_probe=SmoothMeanMeter(len(self._dataloader))
         self._custom_probes:Dict[str,AverageMeter] = dict(
-            [(x, AverageMeter(x)) for x in self._custom_probe_name]
+            [(x, AverageMeter(x,dev)) for x in self._custom_probe_name]
         )
 
         self._loss_updated = False
@@ -72,7 +72,7 @@ class PhaseEnv:
                     if batchi%one_percent_len==0:
                         _logger.debug(f"progress {batchi}/{batch_len}: {postfix}")
                     if self._dry_run and batchi>=2:
-                            break
+                        break
         else:
             for batchi, data in enumerate(self._dataloader):
                 yield batchi, data
@@ -115,7 +115,6 @@ class PhaseEnv:
     def loss_probe(self):
         return self._loss_probe
 
-    @property
     def score(self):
         return self._score.average()
 

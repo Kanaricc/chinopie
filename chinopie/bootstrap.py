@@ -85,6 +85,8 @@ class TrainBootstrap:
 
         # set ddp
         if self._world_size>1:
+            os.environ["MASTER_ADDR"] = "localhost"
+            os.environ["MASTER_PORT"] = "29500"
             dist.enable_ddp()
             logger.info("[BOOTSTRAP] enable DDP")
 
@@ -281,11 +283,9 @@ class TrainBootstrap:
 
 
                 try:
-                    import pdb
-                    pdb.set_trace()
-
                     scores= 0.0 # TODO: find how to catch the score
                     mp.spawn(_wrapper_train,( # type: ignore
+                        self._world_size,
                         trial,
                         recipe,
                         num_epoch,
@@ -355,6 +355,7 @@ class TrainBootstrap:
 
 def _wrapper_train(
         rank:int,
+        world_size:int,
         trial: optuna.Trial,
         recipe:ModuleRecipe,
         num_epoch:int,
@@ -371,6 +372,7 @@ def _wrapper_train(
         study_comment:str,
         verbose:bool,
     ):
+    dist.init_process_group("nccl",rank=rank,world_size=world_size)
     _init_logger(study_comment,verbose)
 
     best_score=inf_score
@@ -411,7 +413,7 @@ def _wrapper_train(
             best_score=state['best_score']
 
     # wait for all threads to load ckpt
-    if dist.is_enabled():
+    if dist.is_initialized():
         dist.barrier()
 
     logger.warning("ready to train model")
@@ -419,12 +421,12 @@ def _wrapper_train(
     recipe.before_start()
     for epochi in range(num_epoch):
         recipe._cur_epoch=epochi # set recipe progress reporter
-        if not dist.is_enabled():
+
+        if dist.is_initialized():
+            dist.barrier()
+
+        if dist.is_main_process():
             logger.warning(f"=== START EPOCH {epochi} ===")
-        else:
-            logger.warning(
-                f"=== RANK {dist.get_rank()} START EPOCH {epochi} ==="
-            )
         
         recipe.before_epoch()
         if recovered_epoch is not None and epochi <= recovered_epoch:
@@ -445,6 +447,11 @@ def _wrapper_train(
         phase_train._check_update()
         _end_phase(staff,tbwriter,epochi,phase_train) # TODO
 
+        if dist.is_initialized():
+            logger.debug(f"rank {dist.get_rank()} reach barrier4")
+            dist.barrier()
+        
+        logger.debug("ready to run val phase")
         _prepare_dataloader_for_epoch(staff._dataloader_val,epochi)
         phase_val=PhaseEnv(
             "val",
@@ -456,8 +463,11 @@ def _wrapper_train(
         )
         recipe.run_val_phase(phase_val)
         phase_val._check_update()
-        score=phase_val.score
+        score=phase_val.score()
         _end_phase(staff,tbwriter,epochi,phase_val)
+
+        if dist.is_initialized():
+            dist.barrier()
 
         if staff._get_flag('test_data_set'):
             _prepare_dataloader_for_epoch(staff._dataloader_test,epochi)
@@ -471,7 +481,7 @@ def _wrapper_train(
             )
             recipe.run_train_phase(phase_test)
             phase_test._check_update()
-            score=phase_test.score
+            score=phase_test.score()
             _end_phase(staff,tbwriter,epochi,phase_test)
         else: phase_test=None
         recipe.after_epoch()
@@ -484,22 +494,18 @@ def _wrapper_train(
             phase_test.loss_probe.average() if phase_test else 0
         ]
         score_msg=[
-            phase_train.score,
-            phase_val.score,
-            phase_test.score if phase_test else 0
+            phase_train.score(),
+            phase_val.score(),
+            phase_test.score() if phase_test else 0
         ]
-        if not dist.is_enabled():
+        if dist.is_main_process():
             logger.warning(
                 f"=== END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
-            )
-        else:
-            logger.warning(
-                f"=== RANK {dist.get_rank()} END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
             )
 
         # check if ckpt is need
         need_save_period = epochi % checkpoint_save_period == 0
-        
+
         if (direction=='maximize' and score >= best_score) or (direction=='minimize' and score <=best_score):
             best_score=score
             need_save_best=True
@@ -516,7 +522,8 @@ def _wrapper_train(
             }
             if need_save_period:recipe.save_ckpt(trial_file.get_checkpoint_slot(epochi),extra_state=state)
             if need_save_best:recipe.save_ckpt(trial_file.get_best_checkpoint_slot(),extra_state=state)
-        if dist.is_enabled():
+
+        if dist.is_initialized():
             dist.barrier()
         
         trial.report(score,epochi)
@@ -544,15 +551,18 @@ def _prepare_dataloader_for_epoch(dataloader:DataLoader,cur_epochi:int):
 
 def _end_phase(staff:ModelStaff,tbwriter:SummaryWriter,epochi:int,phase:PhaseEnv):
     staff.update_tb(epochi,phase,tbwriter)
-    if not dist.is_enabled():
-        for k,v in phase.custom_probes.items():
-            logger.info(f"| {k}: {v.average()}")
+    for k,v in phase.custom_probes.items():
+        average_v=v.average()
+        if dist.is_main_process():
+            logger.info(f"| {k}: {average_v}")
+    
+    if dist.is_main_process():
         logger.info(
-            f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+            f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score()} ||"
         )
     else:
-        logger.info(
-            f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score} ||"
+        logger.debug(
+            f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score()} ||"
         )
 
 def _check_instant_cmd():
@@ -581,7 +591,6 @@ def _init_logger(comment:str,verbose:bool):
     if not os.path.exists("logs"):
         os.mkdir("logs")
     
-    # TODO: handle ddp
     if not dist.is_enabled():
         set_logger_file(f"logs/log_{comment}.log")
     else:
