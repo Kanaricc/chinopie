@@ -364,3 +364,4 @@ class ModelStateKeeper:
             self._recipe.switch_train(self._model)
         else:
             self._recipe.switch_eval(self._model)
+        _logger.debug("restore model training/evaluating status")

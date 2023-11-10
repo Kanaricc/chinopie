@@ -87,7 +87,7 @@ class TrainBootstrap:
         if self._world_size>1:
             os.environ["MASTER_ADDR"] = "localhost"
             os.environ["MASTER_PORT"] = "29500"
-            dist.enable_ddp()
+            dist.prefer_ddp()
             logger.info("[BOOTSTRAP] enable DDP")
 
         # set prune
