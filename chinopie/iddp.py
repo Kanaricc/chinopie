@@ -8,7 +8,7 @@ def enable_ddp():
     global _ddp_enabled
     _ddp_enabled=True
 
-def is_enabled():
+def is_preferred():
     return _ddp_enabled
 
 def is_main_process():

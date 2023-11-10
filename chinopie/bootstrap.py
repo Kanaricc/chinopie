@@ -139,7 +139,7 @@ class TrainBootstrap:
         if os.path.exists('opts'):shutil.rmtree('opts')
     
     def set_fixed_seed(self, seed: Any, ddp_seed=True):
-        if not dist.is_enabled() or not ddp_seed:
+        if not dist.is_preferred() or not ddp_seed:
             set_fixed_seed(seed)
         else:
             set_fixed_seed(seed+dist.get_rank())

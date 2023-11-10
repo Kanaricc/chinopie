@@ -24,7 +24,7 @@ class AveragePrecisionMeter:
 
     def __init__(self, difficult_examples=False):
         super(AveragePrecisionMeter, self).__init__()
-        if dist.is_enabled():
+        if dist.is_preferred():
             warnings.warn("AP Meter may not work properly with DDP. Do not trust the results if DDP sampler is used for dataset!")
 
         self.reset()
