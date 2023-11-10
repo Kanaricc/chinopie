@@ -32,7 +32,7 @@ class Recipe2(ModuleRecipe):
         trainset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         valset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
         testset=FakeRandomSet(torch.zeros(10),torch.zeros(10))
-        trainloader=DataLoader(trainset,self.batch_size,sampler=DistributedSampler(trainset))
+        trainloader=DataLoader(trainset,self.batch_size)
         valloader=DataLoader(valset,self.batch_size)
         testloader=DataLoader(testset,self.batch_size)
         staff.reg_dataset(trainset,trainloader,valset,valloader)
@@ -55,7 +55,7 @@ class Recipe2(ModuleRecipe):
 
 
 if __name__=="__main__":
-    tb=TrainBootstrap(disk_root='deps',num_epoch=10,load_checkpoint=True,save_checkpoint=True,comment=None,world_size=2,dev='cpu')
+    tb=TrainBootstrap(disk_root='deps',num_epoch=10,load_checkpoint=True,save_checkpoint=True,comment=None,world_size=1,dev='cpu')
     tb.hp.reg_float('lr')
     tb.hp.reg_int('batch_size')
     tb.optimize(Recipe2(),'maximize',0,1)

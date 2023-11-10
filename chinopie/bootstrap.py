@@ -372,7 +372,12 @@ def _wrapper_train(
         study_comment:str,
         verbose:bool,
     ):
-    dist.init_process_group("nccl",rank=rank,world_size=world_size)
+    if dev=='cpu':ddp_backend='gloo'
+    elif dev=='cuda':ddp_backend='nccl'
+    else:
+        raise NotImplementedError(f"don't know what backend to use for device `{dev}`")
+    if world_size>1:
+        dist.init_process_group(ddp_backend,rank=rank,world_size=world_size)
     _init_logger(study_comment,verbose)
 
     best_score=inf_score
