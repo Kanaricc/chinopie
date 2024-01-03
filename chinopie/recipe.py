@@ -314,6 +314,13 @@ class ModuleRecipe(ABC):
         if self.scheduler is not None:
             self.scheduler.step()
 
+class TrainingRecipe(ModuleRecipe):
+    def __init__(self, clamp_grad: float | None = None, eval_on_nograd_module: bool = True, stop_backward: bool = False):
+        super().__init__(clamp_grad, eval_on_nograd_module, stop_backward)
+    
+    def run_val_phase(self, p: PhaseEnv):
+        _logger.info("skipping validation phase in training recipe")
+        p.end_phase(0)
 
 class EvaluationRecipe(ModuleRecipe):
     def __init__(self):
