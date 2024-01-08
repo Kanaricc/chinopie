@@ -61,7 +61,7 @@ class TrainBootstrap:
         argparser.add_argument('--dev',type=str,default=dev)
         argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
-        argparser.add_argument('--clear',action='store_true',default=verbose)
+        argparser.add_argument('--clear',action='store_true',default=False)
         args,self._extra_arg_str=argparser.parse_known_args()
 
         self._disk_root = args.disk_root
@@ -390,6 +390,7 @@ def _wrapper_train(
         dev=dev,
     )
 
+    recipe._total_epoch=num_epoch # this could be init before
     recipe._set_staff(staff)
     recipe.prepare(staff)
     staff.prepare(rank)
@@ -422,7 +423,6 @@ def _wrapper_train(
         dist.barrier()
 
     logger.warning("ready to train model")
-    recipe._total_epoch=num_epoch
     recipe.before_start()
     for epochi in range(num_epoch):
         recipe._cur_epoch=epochi # set recipe progress reporter
