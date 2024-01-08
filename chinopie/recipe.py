@@ -267,12 +267,18 @@ class ModuleRecipe(ABC):
         report the score of the phase
         """
         raise NotImplemented
+    
+    def export_model_state(self):
+        return self.model.state_dict()
+    
+    def import_model_state(self,state):
+        self.model.load_state_dict(state)
 
     def restore_ckpt(self,ckpt:str)->Dict[str,Any]:
         data=torch.load(ckpt,map_location=self.dev)
         if 'custom' in ckpt:
             self.import_custom_state(data['custom'])
-        self.model.load_state_dict(data['model']) # this is done after custom state loaded
+        self.import_model_state(data['model']) # this is done after custom state loaded
         self.optimizer.load_state_dict(data['optimizer'])
         if self.scheduler is not None:
             self.scheduler.load_state_dict(data['scheduler'])
@@ -281,9 +287,10 @@ class ModuleRecipe(ABC):
                 _logger.warning("found scheduler state in checkpoint but no scheduler is set")
         return data['extra']
     
+    
     def save_ckpt(self,ckpt:str,extra_state:Any):
         data={
-            'model':self.model.state_dict(),
+            'model':self.export_model_state(),
             'optimizer':self.optimizer.state_dict(),
             'extra':extra_state,
         }
