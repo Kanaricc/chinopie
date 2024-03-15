@@ -24,3 +24,5 @@ Still working in progress. The API is unstable and will change rapidly.
 - ~~Useful `probe` and `dataset` for common researches.~~
 
 ## Docs (WIP)
+
+See [example](https://github.com/Kanaricc/dream-drawer) for a quick start.
