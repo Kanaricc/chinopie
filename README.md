@@ -6,6 +6,8 @@ Chino Pie (py) is a python implementation of Chino.
 
 Still working in progress. The API is unstable and will change rapidly.
 
+**You may want to check the dev branch for the latest updates.**
+
 ## The Goal
 
 - Be easy to the starter. Be clear to the experienced.
