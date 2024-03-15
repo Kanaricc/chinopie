@@ -1,8 +1,8 @@
-# Chino Pie
+# Chinopie
 
 **Yet another deep learning framework to train and validate models with Pytorch, for lightweight academic research purposes.**
 
-Chino Pie (py) is a python implementation of Chino.
+Chinopie (py) is a python implementation of Chino.
 
 Still working in progress. The API is unstable and will change rapidly.
 
