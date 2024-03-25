@@ -152,24 +152,6 @@ class TrainBootstrap:
     def _init_ddp(self):
         logger.info("[BOOTSTRAP] initialized ddp")
 
-    
-    # def _report_info(self,helper:ModelStaff,board_dir:str):
-    #     dataset_str = f"train({len(helper._data_train)}) val({len(helper._data_val)}) test({len(helper._data_test) if hasattr(helper, '_data_test') else 'not set'})"
-    #     table = show_params_in_3cols(
-    #         params={
-    #             "proper device": self._dev,
-    #             "diagnose": self._diagnose_mode,
-    #             "epoch num": self._num_epoch,
-    #             "early stop": self._enable_prune,
-    #             "dataset": dataset_str,
-    #             "board dir": board_dir,
-    #             "checkpoint load/save": f"{self._load_checkpoint}/{self._save_checkpoint}",
-    #             "custom probes": helper._custom_probes,
-    #         }
-    #     )
-    #     logger.warning(f"[BOOTSTRAP] [INFO]\n{table}")
-    #     logger.warning(f"[BOOTSTRAP] [HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
-
     def _report_info(self):
         table = show_params_in_3cols(
             params={
@@ -280,6 +262,8 @@ class TrainBootstrap:
                 trial_file.prepare_checkpoint_dir()
                 # assign hyperparamter
                 recipe.ask_hyperparameter(self._hp_manager)
+                # report hyperparameter
+                logger.warning(f"[BOOTSTRAP] [HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
 
 
                 try:
