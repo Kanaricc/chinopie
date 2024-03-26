@@ -201,7 +201,6 @@ class TrainBootstrap:
             storage_path=f"sqlite:///{storage_path}"
         
         self._inf_score=inf_score
-        self._best_trial_score=inf_score
         self._direction=direction.lower()
         assert direction in ['maximize','minimize'], f"direction must be whether `maximize` or `minimize`, but `{direction}`"
         study = optuna.create_study(study_name='deadbeef',direction=direction,storage=storage_path,load_if_exists=True)
@@ -267,7 +266,8 @@ class TrainBootstrap:
 
 
                 try:
-                    scores= 0.0 # TODO: find how to catch the score
+                    mpmanager=mp.Manager()
+                    q=mpmanager.Queue()
                     mp.spawn(_wrapper_train,( # type: ignore
                         self._world_size,
                         trial,
@@ -284,8 +284,10 @@ class TrainBootstrap:
                         self._dev,
                         self._diagnose_mode,
                         self._comment,
-                        self._verbose
+                        self._verbose,
+                        q
                     ),nprocs=self._world_size,join=True)
+                    scores=q.get(block=False)
                     # _wrapper_train(
                     #     1,
                     #     trial,
@@ -307,8 +309,6 @@ class TrainBootstrap:
                     trial.set_user_attr('params',self._hp_manager.params)
 
                     assert type(scores)==float,"multiple target is not support now"
-                    if scores>=self._best_trial_score:
-                        self._best_trial_score=scores
                     study.tell(trial,scores)
                 except optuna.TrialPruned:
                     study.tell(trial,state=optuna.trial.TrialState.PRUNED)
@@ -355,6 +355,7 @@ def _wrapper_train(
         diagnose_mode:bool,
         study_comment:str,
         verbose:bool,
+        queue:mp.Queue,
     ):
     if dev=='cpu':ddp_backend='gloo'
     elif dev=='cuda':ddp_backend='nccl'
@@ -531,7 +532,8 @@ def _wrapper_train(
             pdb.set_trace()
     
     recipe.end(staff)
-    return best_score
+    queue.put(best_score,block=False)
+    return 0
 
 
 def _prepare_dataloader_for_epoch(dataloader:DataLoader,cur_epochi:int):
