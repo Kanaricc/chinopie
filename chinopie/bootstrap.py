@@ -287,7 +287,7 @@ class TrainBootstrap:
                         self._verbose,
                         q
                     ),nprocs=self._world_size,join=True)
-                    scores=q.get(block=False)
+                    qmsg=q.get(block=False)
                     # _wrapper_train(
                     #     1,
                     #     trial,
@@ -308,9 +308,10 @@ class TrainBootstrap:
                     # append all params (suggested and fixed) into attrs
                     trial.set_user_attr('params',self._hp_manager.params)
 
-                    assert type(scores)==float,"multiple target is not support now"
-                    study.tell(trial,scores)
+                    assert type(qmsg['best_score'])==float,"multiple target is not support now"
+                    study.tell(trial,qmsg['best_score'],state=qmsg['status'])
                 except optuna.TrialPruned:
+                    # no exception can be raised across process, so this is not reachable
                     study.tell(trial,state=optuna.trial.TrialState.PRUNED)
                 gc.collect()
         finally:
@@ -409,6 +410,7 @@ def _wrapper_train(
 
     logger.warning("ready to train model")
     recipe.before_start()
+    pruned=optuna.trial.TrialState.COMPLETE
     for epochi in range(num_epoch):
         recipe._cur_epoch=epochi # set recipe progress reporter
 
@@ -520,19 +522,20 @@ def _wrapper_train(
         # early stop
         if enable_prune and trial.should_prune():
             dist.barrier()
-            # TODO: leave a flag for main thread to determine the status
+            pruned=optuna.trial.TrialState.PRUNED
             break
         
         instant_cmd=_check_instant_cmd()
         if instant_cmd=='prune':
             logger.warning("breaking epoch")
+            pruned=optuna.trial.TrialState.PRUNED
             break
         elif instant_cmd=='pdb':
             logger.warning("entering pdb")
             pdb.set_trace()
     
     recipe.end(staff)
-    queue.put(best_score,block=False)
+    queue.put({'best_score':best_score,'status':pruned},block=False)
     return 0
 
 
