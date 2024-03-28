@@ -262,7 +262,7 @@ class TrainBootstrap:
                 # assign hyperparamter
                 recipe.ask_hyperparameter(self._hp_manager)
                 # report hyperparameter
-                logger.warning(f"[BOOTSTRAP] [HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
+                logger.warning(f"[BOOTSTRAP][HYPERPARAMETERS]\n{show_params_in_3cols(self._hp_manager.params)}")
 
 
                 try:
@@ -315,15 +315,15 @@ class TrainBootstrap:
                 gc.collect()
         finally:
             # post process
-            logger.warning(f"[BOOTSTRAP] finish optimization of stage `{stage_comment}`")
+            logger.warning(f"[BOOTSTRAP][`{stage_comment}`] finish optimization of stage")
             if len(study.get_trials(states=[optuna.trial.TrialState.COMPLETE]))>0:
                 best_trial=study.best_trial
                 best_params = best_trial.user_attrs['params']
                 best_value = study.best_value
                 logger.warning(
-                    f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(best_params)}"
+                    f"[BOOTSTRAP][`{stage_comment}`] best hyperparameters\n{show_params_in_3cols(best_params)}"
                 )
-                logger.warning(f"[BOOTSTRAP] best score: {best_value}")
+                logger.warning(f"[BOOTSTRAP][`{stage_comment}`] best score: {best_value}")
 
                 best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial.user_attrs['trial_id']}")
                 target_helper=self.file.get_exp_instance(stage_comment)
