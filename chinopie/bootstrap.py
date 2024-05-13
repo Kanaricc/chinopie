@@ -78,6 +78,7 @@ class TrainBootstrap:
         self._verbose:bool=args.verbose
         self._enable_prune=enable_prune
         self._world_size=world_size
+        self._clear=args.clear
 
         _init_logger(self._comment,self._verbose)
 
@@ -95,11 +96,9 @@ class TrainBootstrap:
             logger.info('[BOOTSTRAP] early stop is enabled')
 
         # set clear
-        if args.clear:
-            # do clear
-            input("[BOOTSTRAP] are you sure to clear all state files and logs? (press ctrl+c to quit)")
-            self.clear()
-            exit(0)
+        if self._clear:
+            # do clear before each study launches
+            input(f"[BOOTSTRAP] are you sure to first clear states of study {self._comment}? (press ctrl+c to quit)")
         
         # check git ignore
         check_gitignore([self._disk_root])
@@ -134,9 +133,6 @@ class TrainBootstrap:
             self.file.clear_all_instance()
             logger.info("[BOOTSTRAP] deleted trial files in diagnose mode")
     
-    def clear(self):
-        if os.path.exists('logs'):shutil.rmtree('logs')
-        if os.path.exists('opts'):shutil.rmtree('opts')
     
     def set_fixed_seed(self, seed: Any, ddp_seed=True):
         if not dist.is_preferred() or not ddp_seed:
@@ -191,9 +187,19 @@ class TrainBootstrap:
             prev_file_helpers=None
 
         self.study_file=self.file.get_exp_instance(stage_comment)
+        # clear previous states if needed
+        if self._clear:
+            self.study_file.clear_instance()
+            logger.info("[BOOTSTRAP] cleared previous states")
+        
+        # init states
         if not os.path.exists("opts"):
             os.mkdir("opts")
         storage_path = self._get_study_path(stage_comment)
+        if self._clear:
+            if os.path.exists(storage_path):
+                os.remove(storage_path)
+            logger.info("[BOOTSTRAP] cleared previous study")
         # when in diagnose mode, or the `always run` is true, do not save storage.
         if self._diagnose_mode or always_run:
             storage_path=None
@@ -256,6 +262,9 @@ class TrainBootstrap:
                 self._hp_manager._set_trial(trial)
                 logger.info(f"trial {trial._trial_id}, real id {trial_id}")
                 trial_file=self.file.get_exp_instance(f"{stage_comment}_trial{trial_id}")
+                if self._clear:
+                    trial_file.clear_instance()
+                    logger.debug(f"[BOOTSTRAP] cleared trial {trial_id}")
                 
                 # create checkpoint dir
                 trial_file.prepare_checkpoint_dir()
