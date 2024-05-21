@@ -318,7 +318,10 @@ class TrainBootstrap:
                     trial.set_user_attr('params',self._hp_manager.params)
 
                     assert type(qmsg['best_score'])==float,"multiple target is not support now"
-                    study.tell(trial,qmsg['best_score'],state=qmsg['status'])
+                    if qmsg['status']==optuna.trial.TrialState.COMPLETE:
+                        study.tell(trial,qmsg['best_score'],state=qmsg['status'])
+                    else:
+                        study.tell(trial,state=qmsg['status'])
                 except optuna.TrialPruned:
                     # no exception can be raised across process, so this is not reachable
                     study.tell(trial,state=optuna.trial.TrialState.PRUNED)
@@ -537,7 +540,7 @@ def _wrapper_train(
         instant_cmd=_check_instant_cmd()
         if instant_cmd=='prune':
             logger.warning("breaking epoch")
-            pruned=optuna.trial.TrialState.PRUNED
+            pruned=optuna.trial.TrialState.COMPLETE
             break
         elif instant_cmd=='pdb':
             logger.warning("entering pdb")
