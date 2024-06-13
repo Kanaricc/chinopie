@@ -3,6 +3,7 @@ import logging
 import os, sys, shutil,pdb,gc
 import argparse
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+import warnings
 
 
 import torch
@@ -41,6 +42,8 @@ class TrainBootstrap:
         load_checkpoint: bool,
         save_checkpoint: bool,
         comment: Optional[str],
+        version: Optional[str],
+        dataset: Optional[str],
         checkpoint_save_period: int = 1,
         enable_snapshot=False,
         enable_prune=False,
@@ -57,7 +60,9 @@ class TrainBootstrap:
         argparser.add_argument('-n','--num_epoch',type=int,default=num_epoch)
         argparser.add_argument('-l','--load_checkpoint',action='store_true',default=load_checkpoint)
         argparser.add_argument('-s','--save_checkpoint',action='store_true',default=save_checkpoint)
-        argparser.add_argument('-c','--comment',type=str,default=comment)
+        argparser.add_argument('--comment',type=str,default=comment)
+        argparser.add_argument('--version',type=str,default=version)
+        argparser.add_argument('--dataset',type=str,default=dataset)
         argparser.add_argument('--dev',type=str,default=dev)
         argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
@@ -66,10 +71,23 @@ class TrainBootstrap:
 
         self._disk_root = args.disk_root
         self._num_epoch = args.num_epoch
+        
+        def sanitize(s:str):
+            if s.find('-')!=-1:
+                warnings.warn("please do not use `-` in your comment, verison, and dataset to avoid name ambiguity")
+            return s.replace("-","_")
         if args.comment is not None:
-            self._comment = args.comment
+            self._comment = sanitize(args.comment)
         else:
             self._comment = datetime.now().strftime("%Y%m%d%H%M%S")
+        if args.version is not None:
+            self._version=sanitize(args.version)
+        else:
+            self._version="0.0.0"
+        if args.dataset is not None:
+            self._dataset=sanitize(args.dataset)
+        else:
+            self._dataset="unknown"
         self._load_checkpoint:bool = args.load_checkpoint
         self._save_checkpoint:bool = args.save_checkpoint
         self._checkpoint_save_period = checkpoint_save_period
@@ -80,7 +98,7 @@ class TrainBootstrap:
         self._world_size=world_size
         self._clear=args.clear
 
-        _init_logger(self._comment,self._verbose)
+        _init_logger(self._get_full_study_name(),self._verbose)
 
         self.file=GlobalFileHelper(disk_root)
 
@@ -98,7 +116,7 @@ class TrainBootstrap:
         # set clear
         if self._clear:
             # do clear before each study launches
-            input(f"[BOOTSTRAP] are you sure to first clear states of study {self._comment}? (press ctrl+c to quit)")
+            input(f"[BOOTSTRAP] are you sure to first clear states of study {self._get_full_study_name()}? (press ctrl+c to quit)")
         
         # check git ignore
         check_gitignore([self._disk_root])
@@ -111,7 +129,7 @@ class TrainBootstrap:
         # set snapshot
         if enable_snapshot:
             if not diagnose:
-                create_snapshot(self._comment)
+                create_snapshot(self._get_full_study_name())
                 logger.info("[BOOTSTRAP] created snapshot")
             else:
                 logger.info("[BOOTSTRAP] snapshot is disabled in diagnose mode")
@@ -160,15 +178,15 @@ class TrainBootstrap:
         )
         logger.warning(f"[BOOTSTRAP] [INFO]\n{table}")
     
-    def _get_comment(self,stage:Optional[int]=None):
-        if stage is None:
-            stage_comment=self._comment
-        else:
-            stage_comment=f"{self._comment}({stage})"
-        return stage_comment
     
     def _get_study_path(self,comment:str):
         return os.path.join("opts", f"{comment}.db")
+    
+    def _get_full_study_name(self,stage:Optional[int]=None):
+        study_name=f"{self._comment}-{self._version}-{self._dataset}"
+        if stage is not None:
+            study_name+=f"({stage})"
+        return study_name
 
     def optimize(
         self, recipe:ModuleRecipe,direction:str,inf_score:float, n_trials: int,num_epoch:Optional[int]=None, stage:Optional[int]=None,always_run:bool=False,inherit_states:Optional[Dict[str,Any]]=None,
@@ -178,10 +196,10 @@ class TrainBootstrap:
         
         self._flush_params()
                 
-        stage_comment=self._get_comment(stage)
+        stage_comment=self._get_full_study_name(stage)
         # find previous file helper
         if stage and stage>0:
-            prev_file_helpers=[self.file.get_exp_instance(f"{self._comment}({x})") for x in range(stage)]
+            prev_file_helpers=[self.file.get_exp_instance(self._get_full_study_name(x)) for x in range(stage)]
             logger.debug("[BOOTSTRAP] found previous file helper")
         else:
             prev_file_helpers=None
@@ -292,7 +310,7 @@ class TrainBootstrap:
                         inf_score,
                         self._dev,
                         self._diagnose_mode,
-                        self._comment,
+                        self._get_full_study_name(),
                         self._verbose,
                         q
                     ),nprocs=self._world_size,join=True)
@@ -602,7 +620,7 @@ def _init_logger(comment:str,verbose:bool):
     else:
         set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
 
-    if verbose or not dist.is_main_process():
+    if verbose and dist.is_main_process():
         set_verbosity(logging.DEBUG)
     else:
         set_verbosity(logging.INFO)
