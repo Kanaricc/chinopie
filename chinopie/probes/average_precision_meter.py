@@ -84,11 +84,24 @@ class AveragePrecisionMeter:
 
         self.filenames += copy.deepcopy(filename)  # record filenames
 
+
+    def _gather_data(self):
+        assert dist.is_initialized()
+        score_list=[torch.zeros_like(self.scores) for _ in range(dist.get_world_size())]
+        target_list=[torch.zeros_like(self.targets) for _ in range(dist.get_world_size())]
+        dist.all_gather(score_list,self.scores)
+        dist.all_gather(target_list,self.targets)
+        self.scores=torch.cat(score_list)
+        self.targets=torch.cat(target_list)
+
+
     def value(self, retain_topN:Optional[int]=None):
         """Returns the model's average precision for each class
         Return:
             ap (FloatTensor): 1xK tensor, with avg precision for each class k
         """
+        if dist.is_initialized():
+            self._gather_data()
 
         assert self.scores.numel() != 0
         ap = torch.zeros(self.scores.size(1))
@@ -103,6 +116,7 @@ class AveragePrecisionMeter:
                 scores, targets, self.difficult_examples,retain_topN
             )
         return ap
+
 
     @staticmethod
     def average_precision(output, target, difficult_examples=True,retain_topN:Optional[int]=None):
@@ -131,6 +145,9 @@ class AveragePrecisionMeter:
             return 0
 
     def overall(self, threshold=0.0):
+        if dist.is_initialized():
+            self._gather_data()
+        
         assert self.scores.numel() != 0
         scores = self.scores.cpu().numpy()
         targets = self.targets.clone().cpu().numpy()
@@ -138,6 +155,10 @@ class AveragePrecisionMeter:
         return self.evaluation(scores, targets, threshold)
 
     def overall_topk(self, k, threshold=0.0):
+        if dist.is_initialized():
+            self._gather_data()
+        
+        assert self.scores.numel()!=0
         targets = self.targets.clone().cpu().numpy()
         targets[targets == -1] = 0
         n, c = self.scores.size()
