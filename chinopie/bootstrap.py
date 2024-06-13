@@ -25,7 +25,7 @@ from .phasehelper import (
     PhaseEnv,
 )
 from .utils import show_params_in_3cols,create_snapshot,check_gitignore,set_fixed_seed
-from .logging import get_logger,set_logger_file,set_verbosity
+from .logging import get_logger,set_logger_file,set_verbosity,disable_default_handler
 
 logger=get_logger(__name__)
 
@@ -630,4 +630,7 @@ def _init_logger(comment:str,verbose:bool):
         set_verbosity(logging.DEBUG)
     else:
         set_verbosity(logging.INFO)
+    
+    if not dist.is_main_process():
+        disable_default_handler()
     logger.info("[BOOTSTRAP] initialized logger")
