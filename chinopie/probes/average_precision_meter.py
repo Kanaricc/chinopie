@@ -22,13 +22,14 @@ class AveragePrecisionMeter:
     each sample.
     """
 
-    def __init__(self, difficult_examples=False):
+    def __init__(self, difficult_examples=False,dev=None):
         super(AveragePrecisionMeter, self).__init__()
         if dist.is_preferred():
             warnings.warn("AP Meter may not work properly with DDP. Do not trust the results if DDP sampler is used for dataset!")
 
         self.reset()
         self.difficult_examples = difficult_examples
+        self.dev=dev
 
     def reset(self):
         """Resets the meter with empty member variables"""
@@ -87,10 +88,11 @@ class AveragePrecisionMeter:
 
     def _gather_data(self):
         assert dist.is_initialized()
-        score_list=[torch.zeros_like(self.scores) for _ in range(dist.get_world_size())]
-        target_list=[torch.zeros_like(self.targets) for _ in range(dist.get_world_size())]
-        dist.all_gather(score_list,self.scores)
-        dist.all_gather(target_list,self.targets)
+        assert self.dev is not None, "dev must be set for AP meter when distributed training is enabled"
+        score_list=[torch.zeros_like(self.scores,device=self.dev) for _ in range(dist.get_world_size())]
+        target_list=[torch.zeros_like(self.targets,device=self.dev) for _ in range(dist.get_world_size())]
+        dist.all_gather(score_list,self.scores.to(self.dev))
+        dist.all_gather(target_list,self.targets.to(self.dev))
         self.scores=torch.cat(score_list)
         self.targets=torch.cat(target_list)
 
