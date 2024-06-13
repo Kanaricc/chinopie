@@ -30,7 +30,7 @@ _default_handler: Optional[logging.Handler] = None
 _file_handler:Optional[logging.Handler] = None
 
 
-def create_default_formatter() -> colorlog.ColoredFormatter:
+def create_default_formatter(use_color:bool) -> colorlog.ColoredFormatter:
     """Create a default formatter of log messages.
 
     This function is not supposed to be directly accessed by library users.
@@ -60,7 +60,7 @@ def _configure_library_root_logger() -> None:
             # This library has already configured the library root logger.
             return
         _default_handler = logging.StreamHandler()  # Set sys.stderr as stream.
-        _default_handler.setFormatter(create_default_formatter())
+        _default_handler.setFormatter(create_default_formatter(use_color=True))
 
         # Apply our default configuration to the library root logger.
         library_root_logger: logging.Logger = _get_library_root_logger()
@@ -88,7 +88,7 @@ def set_logger_file(path:str):
         if _file_handler is not None:
             return
         _file_handler=logging.FileHandler(path)
-        _file_handler.setFormatter(create_default_formatter())
+        _file_handler.setFormatter(create_default_formatter(use_color=False))
 
         library_root_logger: logging.Logger = _get_library_root_logger()
         library_root_logger.addHandler(_file_handler)
