@@ -21,7 +21,6 @@ Still working in progress. The API is unstable and will change rapidly.
 - **Code** as note. Scene `Snapshot` catches your academic progress automatically.
 - `Bootstrap` your model with **auto optimization** and **many strategies** if you know them.
 - Bulit-in lightweight distributed data `parallelization`.
-- ~~Useful `probe` and `dataset` for common researches.~~
 
 ## Docs (WIP)
 
