@@ -554,7 +554,12 @@ def _wrapper_train(
         if dist.is_initialized():
             dist.barrier()
         
-        trial.report(score,epochi)
+        if dist.is_main_process():
+            trial.report(score,epochi)
+            
+        if dist.is_initialized():
+            dist.barrier()
+        
         # early stop
         if enable_prune and trial.should_prune():
             dist.barrier()
@@ -571,7 +576,9 @@ def _wrapper_train(
             pdb.set_trace()
     
     recipe.end(staff)
-    queue.put({'best_score':best_score,'status':pruned},block=False)
+    if dist.is_main_process():
+        queue.put({'best_score':best_score,'status':pruned},block=False)
+    dist.barrier()
     return 0
 
 
