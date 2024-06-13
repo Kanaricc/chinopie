@@ -2,6 +2,7 @@ from datetime import datetime
 import logging
 import os, sys, shutil,pdb,gc
 import argparse
+import traceback
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 import warnings
 
@@ -343,6 +344,11 @@ class TrainBootstrap:
                 except optuna.TrialPruned:
                     # no exception can be raised across process, so this is not reachable
                     study.tell(trial,state=optuna.trial.TrialState.PRUNED)
+                except Exception as e:
+                    # catch other exceptions and set the study as incomplete
+                    logger.error(f"[BOOTSTRAP][`{stage_comment}`]catched exception and stop this trial:\n{traceback.format_exc()}")
+                    study.tell(trial,state=optuna.trial.TrialState.FAIL)
+                    raise e
                 gc.collect()
         finally:
             # post process
