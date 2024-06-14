@@ -273,6 +273,7 @@ class TrainBootstrap:
         try:
             for _ in range(n_trials):
                 if _check_instant_cmd()=='stop':
+                    _eat_instant_cmd()
                     logger.info("[BOOTSTRAP] stopping optimization...")
                     break
                 
