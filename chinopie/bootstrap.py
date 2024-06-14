@@ -272,6 +272,10 @@ class TrainBootstrap:
 
         try:
             for _ in range(n_trials):
+                if _check_instant_cmd()=='stop':
+                    logger.info("[BOOTSTRAP] stopping optimization...")
+                    break
+                
                 trial=study.ask()
                 # process user attrs
                 trial_id=trial._trial_id if 'trial_id' not in trial.user_attrs else trial.user_attrs['trial_id']
@@ -559,7 +563,7 @@ def _wrapper_train(
             
         if dist.is_initialized():
             dist.barrier()
-        
+
         # early stop
         if enable_prune and trial.should_prune():
             dist.barrier()
@@ -567,6 +571,9 @@ def _wrapper_train(
             break
         
         instant_cmd=_check_instant_cmd()
+        dist.barrier() # barrier before eating the instant cmd
+        if instant_cmd is not None and dist.is_main_process():
+            _eat_instant_cmd()
         if instant_cmd=='prune':
             logger.warning("breaking epoch")
             pruned=optuna.trial.TrialState.COMPLETE
@@ -610,17 +617,20 @@ def _check_instant_cmd():
         if len(full_cmd)==0:
             os.remove('instant_cmd')
         else:
-            with open('instant_cmd','w') as f:
-                f.writelines(full_cmd[1:])
-            full_cmd=full_cmd[0]
-            if full_cmd in ['prune','pdb']:
-                logger.warning(f"received command `{full_cmd}`")
-                return full_cmd
-            else:
-                logger.warning(f"unknown command '{full_cmd}'")
-                return None
+            logger.info(f"found instand cmd `{full_cmd[0]}`")
+            return full_cmd[0].strip()
     else:
         return None
+
+def _eat_instant_cmd():
+    assert os.path.exists('instant_cmd')
+    with open('instant_cmd','r') as f:
+        full_cmd=list(map(lambda x:x.strip(),f.readlines()))
+    if len(full_cmd)<=1:
+        os.remove('instant_cmd')
+    else:
+        with open('instant_cmd','w') as f:
+            f.writelines(full_cmd[1:])
 
 
 def _init_logger(comment:str,verbose:bool):
