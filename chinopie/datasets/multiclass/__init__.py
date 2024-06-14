@@ -35,11 +35,11 @@ class MultiClassDataset(abc.ABC,Dataset[MultiClassSample]):
         ...
     
     @abc.abstractmethod
-    def apply_new_labels(self,labels:Tensor):
+    def apply_new_labels(self,labels:List[int]):
         ...
 
 class MultiClassLocalDataset(MultiClassDataset):
-    def __init__(self, img_paths:List[str],num_labels:int, annotations:List[List[int]],annotation_labels:List[str], preprocess: Any,extra_preprocess:Optional[Any], negatives_as_neg1=False) -> None:
+    def __init__(self, img_paths:List[str],num_labels:int, annotations:List[int],annotation_labels:List[str], preprocess: Any,extra_preprocess:Optional[Any], negatives_as_neg1=False) -> None:
         assert len(img_paths)==len(annotations)
 
         self._img_paths=img_paths
@@ -62,11 +62,9 @@ class MultiClassLocalDataset(MultiClassDataset):
             t[k,v]=1
         return t
     
-    def apply_new_labels(self, labels: Tensor):
-        assert labels.size(0)==len(self) and labels.size(1)==self._num_labels
-        assert labels.dtype==torch.int or labels.dtype==torch.long
-        for k,v in enumerate(labels):
-            self._annotations[k]=(v==1).nonzero(as_tuple=True)[0].tolist()
+    def apply_new_labels(self, labels: List[int]):
+        assert len(labels)==len(self._annotations)
+        self._annotations=labels
     
     
     def __getitem__(self, index) -> MultiClassSample:
