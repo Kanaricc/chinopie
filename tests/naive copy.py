@@ -55,7 +55,7 @@ class Recipe2(ModuleRecipe):
 
 
 if __name__=="__main__":
-    tb=TrainBootstrap(comment="naivecopy",disk_root='deps',num_epoch=10,load_checkpoint=True,save_checkpoint=True,world_size=1,dev='cpu')
+    tb=TrainBootstrap(comment="naivecopy",version='1.0.0',dataset='a',disk_root='deps',num_epoch=10,load_checkpoint=True,save_checkpoint=True,world_size=1,dev='cpu')
     tb.hp.reg_float('lr')
     tb.hp.reg_int('batch_size')
     tb.optimize(Recipe2(),'maximize',0,1)

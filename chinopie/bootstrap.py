@@ -1,3 +1,4 @@
+import code
 from datetime import datetime
 import logging
 import os, sys, shutil,pdb,gc
@@ -53,6 +54,7 @@ class TrainBootstrap:
         dev="",
         diagnose=False,
         verbose=False,
+        handle_exception:bool=True,
     ) -> None:
         argparser=argparse.ArgumentParser(
             prog='ChinoPie'
@@ -95,6 +97,7 @@ class TrainBootstrap:
         self._dev = args.dev
         self._diagnose_mode = args.diagnose
         self._verbose:bool=args.verbose
+        self._handle_exception=handle_exception
         self._enable_prune=enable_prune
         self._world_size=world_size
         self._clear=args.clear
@@ -138,6 +141,11 @@ class TrainBootstrap:
         # set fixed seed
         if seed is not None:
             self.set_fixed_seed(seed)
+
+        # set exception handler
+        if handle_exception:
+            sys.excepthook=exception_handler
+            logger.info("[BOOTSTRAP] enabled exception handler")
         
         # prepare hyperparameter manager
         self._hp_manager=HyperparameterManager()
@@ -318,6 +326,7 @@ class TrainBootstrap:
                         self._diagnose_mode,
                         self._get_full_study_name(),
                         self._verbose,
+                        self._handle_exception,
                         q
                     ),nprocs=self._world_size,join=True)
                     qmsg=q.get(block=False)
@@ -397,8 +406,13 @@ def _wrapper_train(
         diagnose_mode:bool,
         study_comment:str,
         verbose:bool,
+        handle_exception:bool,
         queue:mp.Queue,
     ):
+    if handle_exception and dist.is_main_process():
+        sys.excepthook=exception_handler
+        logger.info("[BOOTSTRAP] enabled exception handler in main rank")
+    
     if dev=='cpu':ddp_backend='gloo'
     elif dev=='cuda':ddp_backend='nccl'
     else:
@@ -652,3 +666,12 @@ def _init_logger(comment:str,verbose:bool):
     if not dist.is_main_process():
         disable_default_handler()
     logger.info("[BOOTSTRAP] initialized logger")
+
+
+def exception_handler(*args, **kwargs):
+    vs = globals().copy()
+    vs.update(locals())
+    shell = code.InteractiveConsole(vs)
+    sys.__excepthook__(*args, **kwargs)
+    shell.interact()
+    return
