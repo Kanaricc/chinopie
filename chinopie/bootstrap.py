@@ -605,7 +605,8 @@ def _wrapper_train(
     recipe.end(staff)
     if dist.is_main_process():
         queue.put({'best_score':best_score,'status':pruned},block=False)
-    dist.barrier()
+    if dist.is_initialized():
+        dist.barrier()
     return 0
 
 
