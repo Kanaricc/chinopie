@@ -14,7 +14,7 @@ class Cub200Dataset(MultiClassLocalDataset):
         annotations=[]
         for k,v in enumerate(annotation_labels):
             sub_dir=f"{k+1:03d}.{v}"
-            for dirpath,dirname,filenames in os.walk(os.path.join(root,"CUB_200_2011",sub_dir)):
+            for dirpath,dirname,filenames in os.walk(os.path.join(root,"images",sub_dir)):
                 img_paths.extend([os.path.join(dirpath,x) for x in filenames])
                 annotations.extend([k for _ in range(len(filenames))])
         
