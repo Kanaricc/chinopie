@@ -120,9 +120,9 @@ class TrainBootstrap:
             logger.info('[BOOTSTRAP] early stop is enabled')
 
         # set clear
-        if self._clear:
-            # do clear before each study launches
-            input(f"[BOOTSTRAP] are you sure to first clear states of study {self._get_full_study_name()}? (press ctrl+c to quit)")
+        # if self._clear:
+        #     # do clear before each study launches
+        #     input(f"[BOOTSTRAP] are you sure to first clear states of study {self._get_full_study_name()}? (press ctrl+c to quit)")
         
         # check git ignore
         check_gitignore([self._disk_root])
