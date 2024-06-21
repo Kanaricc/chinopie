@@ -70,7 +70,7 @@ class MultiClassLocalDataset(MultiClassDataset):
     def __getitem__(self, index) -> MultiClassSample:
         path = self._img_paths[index]
         filename = path
-        labels = sorted(self._annotations[index])
+        labels = self._annotations[index]
         rgb_image=Image.open(path).convert(
                 "RGB"
             )
