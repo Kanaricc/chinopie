@@ -22,7 +22,7 @@ class AveragePrecisionMeter:
     each sample.
     """
 
-    def __init__(self, difficult_examples=False,dev=None):
+    def __init__(self, difficult_examples=False,dev=None,sync_multi_process=True):
         super(AveragePrecisionMeter, self).__init__()
         if dist.is_preferred():
             warnings.warn("AP Meter may not work properly with DDP. Do not trust the results if DDP sampler is used for dataset!")
@@ -30,12 +30,14 @@ class AveragePrecisionMeter:
         self.reset()
         self.difficult_examples = difficult_examples
         self.dev=dev
+        self.sync_multi_process=sync_multi_process
 
     def reset(self):
         """Resets the meter with empty member variables"""
         self.scores = torch.FloatTensor(torch.FloatStorage())
         self.targets = torch.LongTensor(torch.LongStorage())
         self.filenames = []
+        self.has_synced=not self.sync_multi_process
 
     def add(self, output: Tensor, target: Tensor, filename: List[str]):
         """
@@ -89,12 +91,14 @@ class AveragePrecisionMeter:
     def _gather_data(self):
         assert dist.is_initialized()
         assert self.dev is not None, "dev must be set for AP meter when distributed training is enabled"
-        score_list=[torch.zeros_like(self.scores,device=self.dev) for _ in range(dist.get_world_size())]
-        target_list=[torch.zeros_like(self.targets,device=self.dev) for _ in range(dist.get_world_size())]
-        dist.all_gather(score_list,self.scores.to(self.dev))
-        dist.all_gather(target_list,self.targets.to(self.dev))
-        self.scores=torch.cat(score_list)
-        self.targets=torch.cat(target_list)
+        if not self.has_synced:
+            score_list=[torch.zeros_like(self.scores,device=self.dev) for _ in range(dist.get_world_size())]
+            target_list=[torch.zeros_like(self.targets,device=self.dev) for _ in range(dist.get_world_size())]
+            dist.all_gather(score_list,self.scores.to(self.dev))
+            dist.all_gather(target_list,self.targets.to(self.dev))
+            self.scores=torch.cat(score_list)
+            self.targets=torch.cat(target_list)
+            self.has_synced=True
 
 
     def value(self, retain_topN:Optional[int]=None):
