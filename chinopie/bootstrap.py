@@ -1,5 +1,5 @@
 import code
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import os, sys, shutil,pdb,gc
 import argparse
@@ -55,6 +55,7 @@ class TrainBootstrap:
         diagnose=False,
         verbose=False,
         handle_exception:bool=True,
+        ddp_timeout:int=60,
     ) -> None:
         argparser=argparse.ArgumentParser(
             prog='ChinoPie'
@@ -98,6 +99,7 @@ class TrainBootstrap:
         self._diagnose_mode = args.diagnose
         self._verbose:bool=args.verbose
         self._handle_exception=handle_exception
+        self._ddp_timeout=ddp_timeout
         self._enable_prune=enable_prune
         self._world_size=world_size
         self._clear=args.clear
@@ -327,6 +329,7 @@ class TrainBootstrap:
                         self._get_full_study_name(),
                         self._verbose,
                         self._handle_exception,
+                        self._ddp_timeout,
                         q
                     ),nprocs=self._world_size,join=True)
                     qmsg=q.get(block=False)
@@ -407,6 +410,7 @@ def _wrapper_train(
         study_comment:str,
         verbose:bool,
         handle_exception:bool,
+        ddp_timeout:int,
         queue:mp.Queue,
     ):
     if handle_exception and dist.is_main_process():
@@ -418,7 +422,7 @@ def _wrapper_train(
     else:
         raise NotImplementedError(f"don't know what backend to use for device `{dev}`")
     if world_size>1:
-        dist.init_process_group(ddp_backend,rank=rank,world_size=world_size)
+        dist.init_process_group(ddp_backend,rank=rank,world_size=world_size,timeout=timedelta(seconds=ddp_timeout))
     _init_logger(study_comment,verbose)
 
     best_score=inf_score
@@ -586,7 +590,8 @@ def _wrapper_train(
             break
         
         instant_cmd=_check_instant_cmd()
-        dist.barrier() # barrier before eating the instant cmd
+        if dist.is_initialized():
+            dist.barrier() # barrier before eating the instant cmd
         if instant_cmd is not None and dist.is_main_process():
             _eat_instant_cmd()
         if instant_cmd=='prune':
