@@ -27,10 +27,10 @@ class AveragePrecisionMeter:
         if dist.is_preferred():
             warnings.warn("AP Meter may not work properly with DDP. Do not trust the results if DDP sampler is used for dataset!")
 
-        self.reset()
         self.difficult_examples = difficult_examples
         self.dev=dev
         self.sync_multi_process=sync_multi_process
+        self.reset()
 
     def reset(self):
         """Resets the meter with empty member variables"""
