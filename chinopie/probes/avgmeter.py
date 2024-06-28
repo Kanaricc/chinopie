@@ -50,8 +50,8 @@ class AverageMeter:
             return x
         else:
             x=torch.tensor(self._avg,device=self._dev)
-            dist.reduce(x,dst=0)
-            return (x/dist.get_world_size()).item() # type: ignore
+            dist.all_reduce(x,op=dist.ReduceOp.AVG)
+            return x.item() # type: ignore
 
     def value(self) -> Number:
         return self._val

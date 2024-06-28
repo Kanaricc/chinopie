@@ -585,7 +585,6 @@ def _wrapper_train(
 
         # early stop
         if enable_prune and trial.should_prune():
-            dist.barrier()
             pruned=optuna.trial.TrialState.PRUNED
             break
         
