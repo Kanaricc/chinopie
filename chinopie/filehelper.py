@@ -31,10 +31,8 @@ class GlobalFileHelper:
             if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
-        if dist.is_initialized():
-            _logger.debug("found initialized ddp session")
-            dist.barrier()
-            _logger.debug("waited for filehelper distributed initialization")
+        _logger.debug("waiting for filehelper distributed initialization")
+        dist.barrier()
         
         self._instance_files:List[InstanceFileHelper]=[]
     
@@ -76,10 +74,8 @@ class InstanceFileHelper:
             if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
-        if dist.is_initialized():
-            _logger.debug("found initialized ddp session")
-            dist.barrier()
-            _logger.debug("waited for filehelper distributed initialization")
+        _logger.debug("waiting for filehelper distributed initialization")
+        dist.barrier()
 
         self.ckpt_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
         # self.board_dir = os.path.join(
@@ -101,8 +97,7 @@ class InstanceFileHelper:
         if not os.path.exists(self.ckpt_dir):
             if dist.is_main_process():
                 os.mkdir(self.ckpt_dir)
-        if dist.is_initialized():
-            dist.barrier()
+        dist.barrier()
 
     def find_latest_checkpoint(self) -> Optional[str]:
         """

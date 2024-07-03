@@ -109,11 +109,9 @@ class TrainBootstrap:
         self.file=GlobalFileHelper(disk_root)
 
         # set ddp
-        if self._world_size>1:
-            os.environ["MASTER_ADDR"] = "localhost"
-            os.environ["MASTER_PORT"] = "29500"
-            dist.prefer_ddp()
-            logger.info("[BOOTSTRAP] enable DDP")
+        os.environ["MASTER_ADDR"] = "localhost"
+        os.environ["MASTER_PORT"] = "29500"
+        dist.prefer_ddp()
 
         # set prune
         if self._enable_prune:
@@ -259,7 +257,7 @@ class TrainBootstrap:
                 finished_trials.add(trial.user_attrs['trial_id'])
         logger.debug(f"[BOOTSTRAP] found finished trials {finished_trials}. the requested #trials is {n_trials}")
         if len(finished_trials)==n_trials:
-            logger.warning(f"[BOOTSTRAP] this study `{stage_comment}` is already finished")
+            logger.warning(f"[BOOTSTRAP] study `{stage_comment}` is already finished")
             logger.warning(
                 f"[BOOTSTRAP] best hyperparameters\n{show_params_in_3cols(study.best_trial.user_attrs['params'])}"
             )
@@ -421,8 +419,8 @@ def _wrapper_train(
     elif dev=='cuda':ddp_backend='nccl'
     else:
         raise NotImplementedError(f"don't know what backend to use for device `{dev}`")
-    if world_size>1:
-        dist.init_process_group(ddp_backend,rank=rank,world_size=world_size,timeout=timedelta(seconds=ddp_timeout))
+    
+    dist.init_process_group(ddp_backend,rank=rank,world_size=world_size,timeout=timedelta(seconds=ddp_timeout))
     _init_logger(study_comment,verbose)
 
     best_score=inf_score
@@ -464,8 +462,7 @@ def _wrapper_train(
             best_score=state['best_score']
 
     # wait for all threads to load ckpt
-    if dist.is_initialized():
-        dist.barrier()
+    dist.barrier()
 
     logger.warning("ready to train model")
     recipe.before_start()
@@ -473,8 +470,7 @@ def _wrapper_train(
     for epochi in range(num_epoch):
         recipe._cur_epoch=epochi # set recipe progress reporter
 
-        if dist.is_initialized():
-            dist.barrier()
+        dist.barrier()
 
         if dist.is_main_process():
             logger.warning(f"=== START EPOCH {epochi} ===")
@@ -498,9 +494,7 @@ def _wrapper_train(
         phase_train._check_update()
         _end_phase(staff,tbwriter,epochi,phase_train) # TODO
 
-        if dist.is_initialized():
-            logger.debug(f"rank {dist.get_rank()} reach barrier4")
-            dist.barrier()
+        dist.barrier()
         
         logger.debug("ready to run val phase")
         _prepare_dataloader_for_epoch(staff._dataloader_val,epochi)
@@ -517,8 +511,7 @@ def _wrapper_train(
         score=phase_val.score()
         _end_phase(staff,tbwriter,epochi,phase_val)
 
-        if dist.is_initialized():
-            dist.barrier()
+        dist.barrier()
 
         if staff._get_flag('test_data_set'):
             _prepare_dataloader_for_epoch(staff._dataloader_test,epochi)
@@ -574,14 +567,10 @@ def _wrapper_train(
             if need_save_period:recipe.save_ckpt(trial_file.get_checkpoint_slot(epochi),extra_state=state)
             if need_save_best:recipe.save_ckpt(trial_file.get_best_checkpoint_slot(),extra_state=state)
 
-        if dist.is_initialized():
-            dist.barrier()
-        
+        dist.barrier()
         if dist.is_main_process():
             trial.report(score,epochi)
-            
-        if dist.is_initialized():
-            dist.barrier()
+        dist.barrier()
 
         # early stop
         if enable_prune and trial.should_prune():
@@ -589,8 +578,8 @@ def _wrapper_train(
             break
         
         instant_cmd=_check_instant_cmd()
-        if dist.is_initialized():
-            dist.barrier() # barrier before eating the instant cmd
+        # barrier before eating the instant cmd to ensure other processes read the cmd
+        dist.barrier() 
         if instant_cmd is not None and dist.is_main_process():
             _eat_instant_cmd()
         if instant_cmd=='prune':
@@ -604,8 +593,7 @@ def _wrapper_train(
     recipe.end(staff)
     if dist.is_main_process():
         queue.put({'best_score':best_score,'status':pruned},block=False)
-    if dist.is_initialized():
-        dist.barrier()
+    dist.barrier()
     return 0
 
 
@@ -658,10 +646,7 @@ def _init_logger(comment:str,verbose:bool):
     if not os.path.exists("logs"):
         os.mkdir("logs")
     
-    if not dist.is_initialized():
-        set_logger_file(f"logs/log_{comment}.log")
-    else:
-        set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
+    set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
 
     if verbose and dist.is_main_process():
         set_verbosity(logging.DEBUG)

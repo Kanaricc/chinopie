@@ -144,46 +144,26 @@ class ModelStaff:
         self.file=file_helper
         self.prev_files=prev_file_helpers
 
-        if dist.is_initialized():
-            logger.info(
-                f"[DDP] ddp is enabled. current rank is {dist.get_rank()}."
-            )
-
-            if dist.is_main_process():
-                logger.info(
-                    f"[DDP] rank {dist.get_rank()} is the leader. methods are fully enabled."
-                )
-            else:
-                logger.info(
-                    f"[DDP] rank {dist.get_rank()} is the follower. some methods are disabled."
-                )
-
-            world_size = dist.get_world_size()
-            assert world_size != -1, "helper must be init after dist"
-            if world_size <= torch.cuda.device_count():
-                self.dev = f"cuda:{dist.get_rank()}"
-            else:
-                logger.warning(
-                    f"[DDP] world_size is larger than the number of devices. assume use CPU."
-                )
-                self.dev = f"cpu:{dist.get_rank()}"
-            logger.info(
-                f"[DDP] use `{self.dev}` for this process. but you may use other one you want."
-            )
+        logger.info(f"[DDP] current rank is {dist.get_rank()}")
+        if dist.is_main_process():
+            logger.info(f"[DDP] rank {dist.get_rank()} is the leader with full functions")
         else:
-            if dev == "":
-                if torch.cuda.is_available():
-                    self.dev = "cuda"
-                    logger.info("cuda found. use cuda as default device")
-                elif torch.backends.mps.is_available():
-                    self.dev = "mps"
-                    logger.info("mps found. use mps as default device")
-                else:
-                    self.dev = "cpu"
-                    logger.info("use CPU as default device")
+            logger.info(f"[DDP] rank {dist.get_rank()} is the follower with limited functions")
+        
+        world_size=dist.get_world_size()
+        if dev=='cuda':
+            assert torch.cuda.is_available(), "cuda is not available"
+            if world_size<=torch.cuda.device_count():
+                self.dev=f"cuda:{dist.get_rank()}"
             else:
-                self.dev = dev
-                logger.info(f"use custom device `{dev}`")
+                raise ValueError(f"world_size is larger than the number of devices")
+        elif dev=='cpu':
+            self.dev=f"cpu:{dist.get_rank()}"
+        elif dev=='mps':
+            assert torch.backends.mps.is_available(), "mps is not available"
+            assert world_size==1, "mps mode only support single process"
+            self.dev='mps'
+        logger.info(f"[DDP] use `{self.dev}` for this process")
 
         self._custom_probes = []
         self._flags={}
@@ -212,10 +192,9 @@ class ModelStaff:
         self._dataloader_train.worker_init_fn=worker_init_fn
         self._dataloader_val.worker_init_fn=worker_init_fn
 
-        if dist.is_initialized():
-            assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
-            assert not isinstance(self._dataloader_val.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
-            logger.debug("ddp enabled, checked distributed sampler in train and val set")
+        logger.debug("checking distributed sampler in train and val set")
+        assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
+        assert not isinstance(self._dataloader_val.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
 
     def reg_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
@@ -225,19 +204,16 @@ class ModelStaff:
 
         self._dataloader_test.worker_init_fn=worker_init_fn
 
-        if dist.is_initialized():
-            assert not isinstance(self._dataloader_test.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
-            logger.debug("ddp enabled, checked distributed sampler in test set")
+        logger.debug("checking distributed sampler in test set")
+        assert not isinstance(self._dataloader_test.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
     
     def reg_model(self,model:nn.Module):
         self._model=model
     
-    def prepare(self,rank:Optional[int]):
+    def prepare(self,rank:int):
         self._model=self._model.to(self.dev)
-        if dist.is_initialized():
-            assert rank is not None
-            self._raw_model=self._model
-            self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank])
+        self._raw_model=self._model
+        self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank])
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer

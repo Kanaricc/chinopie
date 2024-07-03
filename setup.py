@@ -5,7 +5,7 @@ with open('README.md','r') as fh:
 
 setuptools.setup(
     name='chinopie',
-    version='1.24.5',
+    version='1.24.6',
     author='Kanari',
     author_email='iovo7c@gmail.com',
     description='Chino Pie is a deep learning helper.',
