@@ -54,7 +54,7 @@ class TrainBootstrap:
         dev="",
         diagnose=False,
         verbose=False,
-        handle_exception:bool=True,
+        handle_exception:bool=False,
         ddp_timeout:int=60,
     ) -> None:
         argparser=argparse.ArgumentParser(
@@ -646,7 +646,10 @@ def _init_logger(comment:str,verbose:bool):
     if not os.path.exists("logs"):
         os.mkdir("logs")
     
-    set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
+    if not dist.is_initialized():
+        set_logger_file(f"logs/log_{comment}.log")
+    else:
+        set_logger_file(f"logs/log_{comment}@{dist.get_rank()}.log")
 
     if verbose and dist.is_main_process():
         set_verbosity(logging.DEBUG)

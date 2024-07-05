@@ -100,7 +100,7 @@ class HyperparameterManager:
             return fixed_val
         else:
             logger.debug(f"suggesting dynamic param `{name}`")
-            self._param_config[name] =  self._trial.suggest_int(name, low, high, step, log)
+            self._param_config[name] =  self._trial.suggest_int(name, low, high, step=step, log=log)
             return self._param_config[name] # type: ignore
 
     def suggest_float(
@@ -158,11 +158,13 @@ class ModelStaff:
             else:
                 raise ValueError(f"world_size is larger than the number of devices")
         elif dev=='cpu':
-            self.dev=f"cpu:{dist.get_rank()}"
+            self.dev=f"cpu"
         elif dev=='mps':
             assert torch.backends.mps.is_available(), "mps is not available"
             assert world_size==1, "mps mode only support single process"
             self.dev='mps'
+        else:
+            raise ValueError(f"unknown device `{dev}`")
         logger.info(f"[DDP] use `{self.dev}` for this process")
 
         self._custom_probes = []
@@ -191,9 +193,10 @@ class ModelStaff:
         # worker_init_fn are used in data iteration
         self._dataloader_train.worker_init_fn=worker_init_fn
         self._dataloader_val.worker_init_fn=worker_init_fn
-
-        logger.debug("checking distributed sampler in train and val set")
-        assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
+        
+        if dist.get_world_size()>1:
+            logger.debug("checking distributed sampler in train and val set")
+            assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
         assert not isinstance(self._dataloader_val.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
 
     def reg_test_dataset(self, test: Any, testloader: DataLoader):
@@ -213,7 +216,10 @@ class ModelStaff:
     def prepare(self,rank:int):
         self._model=self._model.to(self.dev)
         self._raw_model=self._model
-        self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank])
+        if self.dev!='cpu':
+            self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank])
+        else:
+            self._model=nn.parallel.DistributedDataParallel(self._model)
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer

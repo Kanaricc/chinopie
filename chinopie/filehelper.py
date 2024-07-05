@@ -30,9 +30,9 @@ class GlobalFileHelper:
                 os.mkdir(os.path.join(self.disk_root, DIR_DATASET))
             if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
-
-        _logger.debug("waiting for filehelper distributed initialization")
-        dist.barrier()
+        
+        
+        assert not dist.is_initialized(), "GlobalFileHelper should not be init in distributed process"
         
         self._instance_files:List[InstanceFileHelper]=[]
     
@@ -74,8 +74,7 @@ class InstanceFileHelper:
             if not os.path.exists(os.path.join(self.disk_root, DIR_SHARE_STATE)):
                 os.mkdir(os.path.join(self.disk_root, DIR_SHARE_STATE))
 
-        _logger.debug("waiting for filehelper distributed initialization")
-        dist.barrier()
+        assert not dist.is_initialized(), "InstanceFileHelper should not be init in distributed process"
 
         self.ckpt_dir = os.path.join(self.disk_root, DIR_CHECKPOINTS, comment)
         # self.board_dir = os.path.join(
@@ -94,10 +93,10 @@ class InstanceFileHelper:
                 shutil.rmtree(path)
 
     def prepare_checkpoint_dir(self):
+        assert not dist.is_initialized(), "checkpoint dir should not be init in distributed process"
         if not os.path.exists(self.ckpt_dir):
             if dist.is_main_process():
                 os.mkdir(self.ckpt_dir)
-        dist.barrier()
 
     def find_latest_checkpoint(self) -> Optional[str]:
         """
