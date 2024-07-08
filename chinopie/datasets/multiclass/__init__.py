@@ -1,4 +1,5 @@
 import abc
+import random
 from typing import TypedDict,Any,Optional,Sequence,List
 
 import numpy as np
@@ -65,6 +66,13 @@ class MultiClassLocalDataset(MultiClassDataset):
     def apply_new_labels(self, labels: List[int]):
         assert len(labels)==len(self._annotations)
         self._annotations=labels
+    
+    def shuffle(self,seed):
+        rng=random.Random(seed)
+        packed=list(zip(self._img_paths,self._annotation_labels))
+        rng.shuffle(packed)
+        self._img_paths=[x[0] for x in packed]
+        self._annotation_labels=[x[1] for x in packed]
     
     
     def __getitem__(self, index) -> MultiClassSample:
