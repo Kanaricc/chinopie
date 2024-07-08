@@ -115,7 +115,7 @@ class TrainBootstrap:
 
         # set prune
         if self._enable_prune:
-            logger.info('[BOOTSTRAP] early stop is enabled')
+            logger.info('[BOOTSTRAP] enabled early stop')
 
         # set clear
         # if self._clear:
@@ -128,7 +128,7 @@ class TrainBootstrap:
         # set diagnose mode
         if diagnose:
             torch.autograd.anomaly_mode.set_detect_anomaly(True)
-            logger.info("[BOOTSTRAP] diagnose mode enabled")
+            logger.info("[BOOTSTRAP] enabled diagnose mode")
         
         # set snapshot
         if enable_snapshot:
@@ -361,7 +361,7 @@ class TrainBootstrap:
                     study.tell(trial,state=optuna.trial.TrialState.PRUNED)
                 except Exception as e:
                     # catch other exceptions and set the study as incomplete
-                    logger.error(f"[BOOTSTRAP][`{stage_comment}`]catched exception and stop this trial:\n{traceback.format_exc()}")
+                    logger.error(f"[BOOTSTRAP][`{stage_comment}`] catched exception and stop this trial:\n{traceback.format_exc()}")
                     study.tell(trial,state=optuna.trial.TrialState.FAIL)
                     raise e
                 gc.collect()
