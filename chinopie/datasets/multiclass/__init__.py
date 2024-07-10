@@ -69,10 +69,10 @@ class MultiClassLocalDataset(MultiClassDataset):
     
     def shuffle(self,seed):
         rng=random.Random(seed)
-        packed=list(zip(self._img_paths,self._annotation_labels))
+        packed=list(zip(self._img_paths,self._annotations))
         rng.shuffle(packed)
         self._img_paths=[x[0] for x in packed]
-        self._annotation_labels=[x[1] for x in packed]
+        self._annotation=[x[1] for x in packed]
     
     
     def __getitem__(self, index) -> MultiClassSample:
