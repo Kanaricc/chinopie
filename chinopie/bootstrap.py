@@ -432,6 +432,7 @@ def _wrapper_train(
         file_helper=trial_file,
         prev_file_helpers=prev_file_helpers,
         dev=dev,
+        diagnose=diagnose_mode,
     )
 
     recipe._total_epoch=num_epoch # this could be init before

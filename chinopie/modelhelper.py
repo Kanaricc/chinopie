@@ -140,9 +140,11 @@ class ModelStaff:
         file_helper: InstanceFileHelper,
         prev_file_helpers:Optional[List[InstanceFileHelper]],
         dev: str,
+        diagnose:bool,
     ) -> None:
         self.file=file_helper
         self.prev_files=prev_file_helpers
+        self._diagnose=diagnose
 
         logger.info(f"[DDP] current rank is {dist.get_rank()}")
         if dist.is_main_process():
@@ -217,9 +219,9 @@ class ModelStaff:
         self._model=self._model.to(self.dev)
         self._raw_model=self._model
         if self.dev!='cpu':
-            self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank])
+            self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank],find_unused_parameters=self._diagnose)
         else:
-            self._model=nn.parallel.DistributedDataParallel(self._model)
+            self._model=nn.parallel.DistributedDataParallel(self._model,find_unused_parameters=self._diagnose)
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer
