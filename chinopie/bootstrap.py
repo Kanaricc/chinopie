@@ -67,6 +67,7 @@ class TrainBootstrap:
         argparser.add_argument('--comment',type=str,default=comment)
         argparser.add_argument('--version',type=str,default=version)
         argparser.add_argument('--dataset',type=str,default=dataset)
+        argparser.add_argument('-w','--world_size',type=int,default=world_size)
         argparser.add_argument('--dev',type=str,default=dev)
         argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
@@ -78,7 +79,7 @@ class TrainBootstrap:
         
         def sanitize(s:str):
             if s.find('-')!=-1:
-                warnings.warn("please do not use `-` in your comment, verison, and dataset to avoid name ambiguity")
+                warnings.warn("`-` is not preferred in comment, verison, and dataset. consider `_` to avoid name ambiguity.")
             return s.replace("-","_")
         if args.comment is not None:
             self._comment = sanitize(args.comment)
@@ -101,7 +102,7 @@ class TrainBootstrap:
         self._handle_exception=handle_exception
         self._ddp_timeout=ddp_timeout
         self._enable_prune=enable_prune
-        self._world_size=world_size
+        self._world_size=args.world_size
         self._clear=args.clear
 
         _init_logger(self._get_full_study_name(),self._verbose)
@@ -136,7 +137,7 @@ class TrainBootstrap:
                 create_snapshot(self._get_full_study_name())
                 logger.info("[BOOTSTRAP] created snapshot")
             else:
-                logger.info("[BOOTSTRAP] snapshot is disabled in diagnose mode")
+                logger.info("[BOOTSTRAP] disabled snapshot in diagnose mode")
         
         # set fixed seed
         if seed is not None:
@@ -162,11 +163,11 @@ class TrainBootstrap:
     
     
     def set_fixed_seed(self, seed: Any, ddp_seed=True):
-        if not dist.is_preferred() or not ddp_seed:
+        if not ddp_seed:
             set_fixed_seed(seed)
         else:
             set_fixed_seed(seed+dist.get_rank())
-            logger.info("[BOOTSTRAP] ddp detected, use different seed")
+        logger.info(f"[BOOTSTRAP] set fixed seed for rank {dist.get_rank()}")
     
     def _flush_params(self):
         self._hp_manager.parse_args(self._extra_arg_str)
