@@ -201,7 +201,8 @@ class ModelStaff:
             logger.debug("checking distributed sampler in train and val set")
             assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
             if isinstance(self._dataloader_val.sampler, DistributedSampler):
-                warnings.warn("DistributedSampler is used for valloader, of which the behavior may lead to incorrect metrics when batch size is not divisible by #gpu.")
+                # https://discuss.pytorch.org/t/a-question-about-model-test-in-ddp/140456
+                warnings.warn("DistributedSampler is used for valloader, of which the behavior may lead to incorrect metrics when #batch is not divisible by #gpu.")
 
     def reg_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
@@ -213,7 +214,8 @@ class ModelStaff:
 
         logger.debug("checking distributed sampler in test set")
         if isinstance(self._dataloader_test.sampler, DistributedSampler):
-            warnings.warn("DistributedSampler is used for testloader, of which the behavior may lead to incorrect metrics when batch size is not divisible by #gpu.")
+            # https://discuss.pytorch.org/t/a-question-about-model-test-in-ddp/140456
+            warnings.warn("DistributedSampler is used for testloader, of which the behavior may lead to incorrect metrics when #batch is not divisible by #gpu.")
     
     def reg_model(self,model:nn.Module):
         self._model=model
