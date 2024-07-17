@@ -5,6 +5,7 @@ import argparse
 import random
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+import warnings
 
 
 import torch
@@ -199,7 +200,8 @@ class ModelStaff:
         if dist.get_world_size()>1:
             logger.debug("checking distributed sampler in train and val set")
             assert isinstance(self._dataloader_train.sampler, DistributedSampler), "Please use DistributedSampler when DDP is enabled"
-        assert not isinstance(self._dataloader_val.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
+            if isinstance(self._dataloader_val.sampler, DistributedSampler):
+                warnings.warn("DistributedSampler is used for valloader, of which the behavior may lead to incorrect metrics when batch size is not divisible by #gpu.")
 
     def reg_test_dataset(self, test: Any, testloader: DataLoader):
         self._data_test = test
@@ -210,7 +212,8 @@ class ModelStaff:
         self._dataloader_test.worker_init_fn=worker_init_fn
 
         logger.debug("checking distributed sampler in test set")
-        assert not isinstance(self._dataloader_test.sampler, DistributedSampler), "Do not use DistributedSampler for evaluation"
+        if isinstance(self._dataloader_test.sampler, DistributedSampler):
+            warnings.warn("DistributedSampler is used for testloader, of which the behavior may lead to incorrect metrics when batch size is not divisible by #gpu.")
     
     def reg_model(self,model:nn.Module):
         self._model=model
