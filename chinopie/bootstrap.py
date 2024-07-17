@@ -474,8 +474,7 @@ def _wrapper_train(
 
         dist.barrier()
 
-        if dist.is_main_process():
-            logger.warning(f"=== START EPOCH {epochi} ===")
+        logger.warning(f"=== START EPOCH {epochi} ===")
         
         recipe.before_epoch()
         if recovered_epoch is not None and epochi <= recovered_epoch:
@@ -544,10 +543,9 @@ def _wrapper_train(
             phase_val.score(),
             phase_test.score() if phase_test else 0
         ]
-        if dist.is_main_process():
-            logger.warning(
-                f"=== END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
-            )
+        logger.warning(
+            f"=== END EPOCH {epochi} - loss {'/'.join(map(lambda x: f'{x:.3f}',loss_msg))}, score {'/'.join(map(lambda x: f'{x:.3f}',score_msg))} ==="
+        )
 
         # check if ckpt is need
         need_save_period = epochi % checkpoint_save_period == 0
@@ -607,17 +605,11 @@ def _end_phase(staff:ModelStaff,tbwriter:SummaryWriter,epochi:int,phase:PhaseEnv
     staff.update_tb(epochi,phase,tbwriter)
     for k,v in phase.custom_probes.items():
         average_v=v.average()
-        if dist.is_main_process():
-            logger.info(f"| {k}: {average_v}")
+        logger.info(f"| {k}: {average_v}")
     
-    if dist.is_main_process():
-        logger.info(
-            f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score()} ||"
-        )
-    else:
-        logger.debug(
-            f"|| RANK {dist.get_rank()} end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score()} ||"
-        )
+    logger.info(
+        f"|| end {phase._phase_name} {epochi} - loss {phase.loss_probe.average()}, score {phase.score()} ||"
+    )
 
 def _check_instant_cmd():
     logger.debug("checking instant cmd")
