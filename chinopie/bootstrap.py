@@ -373,10 +373,13 @@ class TrainBootstrap:
                 best_trial=study.best_trial
                 best_params = best_trial.user_attrs['params']
                 best_value = study.best_value
-                logger.warning(
-                    f"[BOOTSTRAP][`{stage_comment}`] best hyperparameters\n{show_params_in_3cols(best_params)}"
-                )
-                logger.warning(f"[BOOTSTRAP][`{stage_comment}`] best score: {best_value}")
+                if not self._diagnose_mode:
+                    logger.warning(
+                        f"[BOOTSTRAP][`{stage_comment}`] best hyperparameters\n{show_params_in_3cols(best_params)}"
+                    )
+                    logger.warning(f"[BOOTSTRAP][`{stage_comment}`] best score: {best_value}")
+                else:
+                    logger.warning(f"[BOOTSTRAP][`{stage_comment}`] passed diagnose mode")
 
                 best_file=self.file.get_exp_instance(f"{stage_comment}_trial{best_trial.user_attrs['trial_id']}")
                 target_helper=self.file.get_exp_instance(stage_comment)
