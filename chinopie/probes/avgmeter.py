@@ -9,6 +9,7 @@ from .. import iddp as dist
 
 class SmoothMeanMeter:
     def __init__(self,length:int,level1:float=0.1,level2:float=0.25,level3:float=0.5) -> None:
+        assert length>0, "the length should larger than 0"
         self._levels=[level1*length,level2*length,level3*length]
         self._decays=[math.pow(1/x,1/x) for x in self._levels]
         self._norm=[1 for x in self._levels]
