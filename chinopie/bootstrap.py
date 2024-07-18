@@ -163,11 +163,12 @@ class TrainBootstrap:
     
     
     def set_fixed_seed(self, seed: Any, ddp_seed=True):
-        if not ddp_seed:
+        if not dist.is_initialized() or not ddp_seed:
             set_fixed_seed(seed)
+            logger.info(f"[BOOTSTRAP] set fixed seed for main process")
         else:
             set_fixed_seed(seed+dist.get_rank())
-        logger.info(f"[BOOTSTRAP] set fixed seed for rank {dist.get_rank()}")
+            logger.info(f"[BOOTSTRAP] set fixed seed for rank {dist.get_rank()}")
     
     def _flush_params(self):
         self._hp_manager.parse_args(self._extra_arg_str)
@@ -443,7 +444,7 @@ def _wrapper_train(
     recipe.prepare(staff)
     staff.prepare(rank)
     # set optimizer
-    staff._reg_optimizer(recipe.set_optimizers(staff._model))
+    staff._reg_optimizer(recipe.set_optimizers(staff._model.module))
     _scheduler=recipe.set_scheduler(staff._optimizer)
     if _scheduler is not None:
         staff._reg_scheduler(_scheduler)

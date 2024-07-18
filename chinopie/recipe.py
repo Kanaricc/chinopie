@@ -59,7 +59,7 @@ class ModuleRecipe(ABC):
     
     @property
     def model(self):
-        return self._staff._model
+        return self._staff._model.module
     
     @property
     def optimizer(self):
@@ -119,6 +119,7 @@ class ModuleRecipe(ABC):
             warnings.warn("The model is not set for training during train phase. Please understand what you have done.")
         p.end_phase(self.report_score('train'))
 
+
     def run_val_phase(self,p:PhaseEnv):
         self.switch_eval(self.model)
         state_before=self.model.training
@@ -133,6 +134,7 @@ class ModuleRecipe(ABC):
             warnings.warn("The model is not set for evaluating during val phase. Please understand what you have done.")
         p.end_phase(self.report_score('val'))
 
+
     def run_test_phase(self,p:PhaseEnv):
         self.switch_eval(self.model)
         state_before=self.model.training
@@ -146,7 +148,8 @@ class ModuleRecipe(ABC):
         if self.model.training:
             warnings.warn("The model is not set for evaluating during val phase. Please understand what you have done.")
         p.end_phase(self.report_score('test'))
-    
+
+
     def run_train_iter(self,data,p:PhaseEnv):
         dev_data=chinopie.any_to(data,self.dev)
         self.before_iter_train(data)

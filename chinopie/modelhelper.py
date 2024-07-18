@@ -227,6 +227,7 @@ class ModelStaff:
             self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank],find_unused_parameters=self._diagnose)
         else:
             self._model=nn.parallel.DistributedDataParallel(self._model,find_unused_parameters=self._diagnose)
+
     
     def _reg_optimizer(self,optimizer:Optimizer):
         self._optimizer=optimizer
