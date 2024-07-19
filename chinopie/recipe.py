@@ -5,6 +5,7 @@ from abc import ABC,abstractmethod
 import torch
 from torch import nn,Tensor
 from torch.utils.data import DataLoader
+from torch.nn.parallel import DistributedDataParallel
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import LRScheduler
 import chinopie
@@ -59,6 +60,11 @@ class ModuleRecipe(ABC):
     
     @property
     def model(self):
+        return self._staff._model
+    
+    @property
+    def raw_model(self):
+        assert isinstance(self._staff._model,DistributedDataParallel)
         return self._staff._model.module
     
     @property
@@ -272,10 +278,10 @@ class ModuleRecipe(ABC):
         raise NotImplemented
     
     def export_model_state(self):
-        return self.model.state_dict()
+        return self.raw_model.state_dict()
     
     def import_model_state(self,state):
-        self.model.load_state_dict(state)
+        self.raw_model.load_state_dict(state)
 
     def restore_ckpt(self,ckpt:str)->Dict[str,Any]:
         data=torch.load(ckpt,map_location=self.dev)
