@@ -69,6 +69,8 @@ def create_snapshot(comment:Optional[str]=None):
 
     repo=Repo('.')
     base_branch=repo.active_branch.name
+    if base_branch.find("_")!=-1 and len(base_branch.split("_")[0])==len(date):
+        raise RuntimeError("The directory is under a snapshot branch. Please checkout the proper branch.")
     g=repo.git
     
     g.add('.')
