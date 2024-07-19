@@ -112,7 +112,6 @@ class TrainBootstrap:
         # set ddp
         os.environ["MASTER_ADDR"] = "localhost"
         os.environ["MASTER_PORT"] = "29500"
-        dist.prefer_ddp()
 
         # set prune
         if self._enable_prune:
