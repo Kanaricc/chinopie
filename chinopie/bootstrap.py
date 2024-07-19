@@ -1,7 +1,7 @@
 import code
 from datetime import datetime, timedelta
 import logging
-import os, sys, shutil,pdb,gc
+import os, sys, shutil,gc
 import argparse
 import traceback
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
@@ -15,6 +15,7 @@ from torch.functional import Tensor
 from torch.utils.data.dataloader import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from torch.utils.data.distributed import DistributedSampler
+from torch.distributed import breakpoint
 import torch.multiprocessing as mp
 import optuna
 import numpy as np
@@ -451,15 +452,15 @@ def _wrapper_train(
 
     assert staff._get_flag('trainval_data_set'), "train or val set not set"
     if not staff._get_flag('test_data_set'):
-        logger.warning("test set not set. test phase will be skipped.")
+        logger.warning("[BOOTSTRAP] test set not set. test phase will be skipped.")
     
     recovered_epoch=None
     if load_checkpoint:
         latest_ckpt_path=trial_file.find_latest_checkpoint()
         if latest_ckpt_path is not None:
-            logger.info(f"found latest checkpoint at `{latest_ckpt_path}`")
+            logger.info(f"[BOOTSTRAP] found latest checkpoint at `{latest_ckpt_path}`")
         else:
-            logger.info(f"no checkpoint found")
+            logger.info(f"[BOOTSTRAP] no checkpoint found")
 
         if load_checkpoint and latest_ckpt_path is not None:
             state=recipe.restore_ckpt(latest_ckpt_path)
@@ -469,7 +470,7 @@ def _wrapper_train(
     # wait for all threads to load ckpt
     dist.barrier()
 
-    logger.warning("ready to train model")
+    logger.warning("[BOOTSTRAP] ready to train model")
     recipe.before_start()
     pruned=optuna.trial.TrialState.COMPLETE
     for epochi in range(num_epoch):
@@ -586,12 +587,12 @@ def _wrapper_train(
         if instant_cmd is not None and dist.is_main_process():
             _eat_instant_cmd()
         if instant_cmd=='prune':
-            logger.warning("breaking epoch")
+            logger.warning("[BOOTSTRAP] breaking epoch")
             pruned=optuna.trial.TrialState.COMPLETE
             break
         elif instant_cmd=='pdb':
-            logger.warning("entering pdb")
-            pdb.set_trace()
+            logger.warning("[BOOTSTRAP] entering pdb")
+            breakpoint()
     
     recipe.end(staff)
     if dist.is_main_process():
@@ -622,7 +623,7 @@ def _check_instant_cmd():
         if len(full_cmd)==0:
             os.remove('instant_cmd')
         else:
-            logger.info(f"found instand cmd `{full_cmd[0]}`")
+            logger.info(f"[BOOTSTRAP] found instand cmd `{full_cmd[0]}`")
             return full_cmd[0].strip()
     else:
         return None
