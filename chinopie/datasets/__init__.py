@@ -33,7 +33,7 @@ def extract_zip(file:str,tgt:str):
     elif file.endswith('.tar'):
         with tarfile.TarFile(file,'r') as f:
             f.extractall(tgt)
-    elif file.endswith('.gz'):
+    elif file.endswith('.gz') or file.endswith('.tgz'):
         with tarfile.open(file,'r') as f:
             f.extractall(tgt)
     else:
