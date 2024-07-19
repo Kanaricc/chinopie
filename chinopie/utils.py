@@ -28,9 +28,9 @@ def set_fixed_seed(seed:Any):
 
 def copy_model(model:nn.Module,dev=None):
     if dev is None:
-        return copy.deepcopy(model.cpu())
+        return copy.deepcopy(model)
     else:
-        return copy.deepcopy(model.cpu()).to(dev)
+        return copy.deepcopy(model).to(dev)
 
 def freeze_model(model:nn.Module | nn.Parameter):
     if isinstance(model,nn.Parameter):
