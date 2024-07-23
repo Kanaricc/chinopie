@@ -151,6 +151,10 @@ class TrainBootstrap:
         # prepare hyperparameter manager
         self._hp_manager=HyperparameterManager()
         self._inherit_states:Dict[str,Any]={}
+        
+        # remove instant cmd
+        while _check_instant_cmd()!=None:
+            _eat_instant_cmd()
     
     @property
     def hp(self):
@@ -620,9 +624,7 @@ def _check_instant_cmd():
     if os.path.exists('instant_cmd'):
         with open('instant_cmd','r') as f:
             full_cmd=list(map(lambda x:x.strip(),f.readlines()))
-        if len(full_cmd)==0:
-            os.remove('instant_cmd')
-        else:
+        if len(full_cmd)!=0:
             logger.info(f"[BOOTSTRAP] found instand cmd `{full_cmd[0]}`")
             return full_cmd[0].strip()
     else:
