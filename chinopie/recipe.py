@@ -16,10 +16,11 @@ _logger=logging.get_logger(__name__)
 
 
 class ModuleRecipe(ABC):
-    def __init__(self, clamp_grad:Optional[float]=None,eval_on_nograd_module:bool=True,stop_backward:bool=False):
+    def __init__(self, clamp_grad:Optional[float]=None,eval_on_nograd_module:bool=True,stop_backward:bool=False,autocast:bool=False):
         self._clamp_grad=clamp_grad
         self._eval_on_nograd_module=eval_on_nograd_module
         self._stop_backward=stop_backward
+        self._autocast=autocast
 
         self._cur_epoch:Optional[int]=None
         self._cur_batch:Optional[int]=None
@@ -160,8 +161,9 @@ class ModuleRecipe(ABC):
         dev_data=chinopie.any_to(data,self.dev)
         self.before_iter_train(data)
 
-        output=self.forward_train(dev_data)
-        loss=self.cal_loss_train(dev_data,output)
+        with torch.autocast(device_type=self.dev,enabled=self._autocast):
+            output=self.forward_train(dev_data)
+            loss=self.cal_loss_train(dev_data,output)
         p.update_loss(loss.detach().cpu())
 
         if not self._stop_backward:
@@ -180,25 +182,25 @@ class ModuleRecipe(ABC):
 
     def run_val_iter(self,data,p:PhaseEnv):
         self.before_iter_val(data)
-        with torch.no_grad():
+        with torch.no_grad(),torch.autocast(device_type=self.dev,enabled=self._autocast):
             dev_data=chinopie.any_to(data,self.dev)
             output=self.forward_val(dev_data)
             loss=self.cal_loss_val(dev_data,output)
-            p.update_loss(loss.detach().cpu())
-            output_cpu=chinopie.any_to(output,'cpu')
-            self.update_probe_val(data,output_cpu,p)
+        p.update_loss(loss.detach().cpu())
+        output_cpu=chinopie.any_to(output,'cpu')
+        self.update_probe_val(data,output_cpu,p)
 
         self.after_iter_val(data,output_cpu)
     
     def run_test_iter(self,data,p:PhaseEnv):
         self.before_iter_test(data)
-        with torch.no_grad():
+        with torch.no_grad(),torch.autocast(device_type=self.dev,enabled=self._autocast):
             dev_data=chinopie.any_to(data,self.dev)
             output=self.forward_test(dev_data)
             loss=self.cal_loss_test(dev_data,output)
-            p.update_loss(loss.detach().cpu())
-            output_cpu=chinopie.any_to(output,'cpu')
-            self.update_probe_test(data,output_cpu,p)
+        p.update_loss(loss.detach().cpu())
+        output_cpu=chinopie.any_to(output,'cpu')
+        self.update_probe_test(data,output_cpu,p)
         
         self.after_iter_test(data,output_cpu)
     
@@ -331,16 +333,16 @@ class ModuleRecipe(ABC):
             self.scheduler.step()
 
 class TrainingRecipe(ModuleRecipe):
-    def __init__(self, clamp_grad: float | None = None, eval_on_nograd_module: bool = True, stop_backward: bool = False):
-        super().__init__(clamp_grad, eval_on_nograd_module, stop_backward)
+    def __init__(self, clamp_grad: float | None = None, eval_on_nograd_module: bool = True, stop_backward: bool = False,autocast:bool=False):
+        super().__init__(clamp_grad, eval_on_nograd_module, stop_backward,autocast=autocast)
     
     def run_val_phase(self, p: PhaseEnv):
         _logger.info("skipping validation phase in training recipe")
         p.end_phase(0)
 
 class EvaluationRecipe(ModuleRecipe):
-    def __init__(self):
-        super().__init__(clamp_grad=None, eval_on_nograd_module=False, stop_backward=True)
+    def __init__(self,autocast:bool=False):
+        super().__init__(clamp_grad=None, eval_on_nograd_module=False, stop_backward=True,autocast=autocast)
 
     def run_train_phase(self, p: PhaseEnv):
         _logger.info("skipped training phase in evaluation recipe.")
