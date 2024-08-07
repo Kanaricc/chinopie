@@ -32,8 +32,8 @@ class AveragePrecisionMeter:
 
     def reset(self):
         """Resets the meter with empty member variables"""
-        self.scores = torch.FloatTensor(torch.FloatStorage())
-        self.targets = torch.LongTensor(torch.LongStorage())
+        self.scores = torch.FloatTensor(torch.UntypedStorage())
+        self.targets = torch.LongTensor(torch.UntypedStorage())
         self.filenames = []
         self.has_synced=not self.sync_multi_process
 

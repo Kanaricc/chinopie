@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 from torch.optim import Optimizer
 from chinopie import HyperparameterManager, ModelStaff,ModuleRecipe,TrainBootstrap,DistributedSampler
 from chinopie.datasets.fakeset import FakeRandomSet
+from chinopie.probes.average_precision_meter import AveragePrecisionMeter
 
 class Model(nn.Module):
     def __init__(self) -> None:
@@ -43,6 +44,9 @@ class Recipe2(ModuleRecipe):
     
     def set_optimizers(self, model) -> Optimizer:
         return torch.optim.AdamW(model.parameters(),lr=self.lr)
+    
+    def before_epoch(self):
+        self.aps=AveragePrecisionMeter(dev=self.dev)
     
     def forward(self, data) -> Tensor:
         return self.model(data['input'])
