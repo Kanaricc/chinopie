@@ -367,7 +367,7 @@ class EvaluationRecipe(ModuleRecipe):
         self.after_iter(data,output_cpu,'train')
 
 
-    def switch_train(self, model):
+    def switch_train(self, model: nn.Module | None = None):
         # Set eval during training to avoid potential changes to models.
         # But useless.
         self.switch_eval(model)
