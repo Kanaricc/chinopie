@@ -35,7 +35,7 @@ logger=get_logger(__name__)
 
 # all block sync should be done in bootstrap. all data sync should be done in helper.
 
-from .recipe import ModuleRecipe
+from .recipes import ModuleRecipe
 
 class TrainBootstrap:
     def __init__(
