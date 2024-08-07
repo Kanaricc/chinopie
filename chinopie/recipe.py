@@ -83,6 +83,14 @@ class ModuleRecipe(ABC):
         return self._staff.dev
     
     @property
+    def dev_class(self):
+        CLASS=['cuda','cpu','mps']
+        for c in CLASS:
+            if self.dev.find(c)!=-1:
+                return c
+        raise ValueError(f"unknown dev class: {self.dev}. supported list: {CLASS}.")
+    
+    @property
     def cur_epoch(self):
         assert self._cur_epoch is not None, "Epoch is not init. Did you access it before the recipe starts?"
         return self._cur_epoch
@@ -161,7 +169,7 @@ class ModuleRecipe(ABC):
         dev_data=chinopie.any_to(data,self.dev)
         self.before_iter_train(data)
 
-        with torch.autocast(device_type=self.dev,enabled=self._autocast):
+        with torch.autocast(device_type=self.dev_class,enabled=self._autocast):
             output=self.forward_train(dev_data)
             loss=self.cal_loss_train(dev_data,output)
         p.update_loss(loss.detach().cpu())
@@ -182,7 +190,7 @@ class ModuleRecipe(ABC):
 
     def run_val_iter(self,data,p:PhaseEnv):
         self.before_iter_val(data)
-        with torch.no_grad(),torch.autocast(device_type=self.dev,enabled=self._autocast):
+        with torch.no_grad(),torch.autocast(device_type=self.dev_class,enabled=self._autocast):
             dev_data=chinopie.any_to(data,self.dev)
             output=self.forward_val(dev_data)
             loss=self.cal_loss_val(dev_data,output)
@@ -194,7 +202,7 @@ class ModuleRecipe(ABC):
     
     def run_test_iter(self,data,p:PhaseEnv):
         self.before_iter_test(data)
-        with torch.no_grad(),torch.autocast(device_type=self.dev,enabled=self._autocast):
+        with torch.no_grad(),torch.autocast(device_type=self.dev_class,enabled=self._autocast):
             dev_data=chinopie.any_to(data,self.dev)
             output=self.forward_test(dev_data)
             loss=self.cal_loss_test(dev_data,output)
