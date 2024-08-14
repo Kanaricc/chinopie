@@ -426,8 +426,9 @@ def _wrapper_train(
     
     _init_logger(study_comment,verbose)
     
-    set_fixed_seed(seed+dist.get_rank())
-    logger.info(f"[BOOTSTRAP] set fixed seed for rank {dist.get_rank()}")
+    if seed is not None:
+        set_fixed_seed(seed+dist.get_rank())
+        logger.info(f"[BOOTSTRAP] set fixed seed for rank {dist.get_rank()}")
 
     best_score=inf_score
     # create board dir before training
