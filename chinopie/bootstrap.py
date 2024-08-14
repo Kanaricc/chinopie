@@ -98,6 +98,7 @@ class TrainBootstrap:
         self._save_checkpoint:bool = args.save_checkpoint
         self._checkpoint_save_period = checkpoint_save_period
         self._dev = args.dev
+        self._seed=seed
         self._diagnose_mode = args.diagnose
         self._verbose:bool=args.verbose
         self._handle_exception=handle_exception
@@ -138,10 +139,6 @@ class TrainBootstrap:
                 logger.info("[BOOTSTRAP] created snapshot")
             else:
                 logger.info("[BOOTSTRAP] disabled snapshot in diagnose mode")
-        
-        # set fixed seed
-        if seed is not None:
-            self.set_fixed_seed(seed)
 
         # set exception handler
         if handle_exception:
@@ -165,15 +162,7 @@ class TrainBootstrap:
             self.file.clear_all_instance()
             logger.info("[BOOTSTRAP] deleted trial files in diagnose mode")
     
-    
-    def set_fixed_seed(self, seed: Any, ddp_seed=True):
-        if not dist.is_initialized() or not ddp_seed:
-            set_fixed_seed(seed)
-            logger.info(f"[BOOTSTRAP] set fixed seed for main process")
-        else:
-            set_fixed_seed(seed+dist.get_rank())
-            logger.info(f"[BOOTSTRAP] set fixed seed for rank {dist.get_rank()}")
-    
+        
     def _flush_params(self):
         self._hp_manager.parse_args(self._extra_arg_str)
         
@@ -329,6 +318,7 @@ class TrainBootstrap:
                         direction,
                         inf_score,
                         self._dev,
+                        self._seed,
                         self._diagnose_mode,
                         self._get_full_study_name(),
                         self._verbose,
@@ -413,6 +403,7 @@ def _wrapper_train(
         direction:str,
         inf_score:float,
         dev:Any,
+        seed:Any,
         diagnose_mode:bool,
         study_comment:str,
         verbose:bool,
@@ -430,7 +421,13 @@ def _wrapper_train(
         raise NotImplementedError(f"don't know what backend to use for device `{dev}`")
     
     dist.init_process_group(ddp_backend,rank=rank,world_size=world_size,timeout=timedelta(seconds=ddp_timeout))
+    if dev=='cuda':
+        torch.cuda.set_device(rank) # for some sync ops
+    
     _init_logger(study_comment,verbose)
+    
+    set_fixed_seed(seed+dist.get_rank())
+    logger.info(f"[BOOTSTRAP] set fixed seed for rank {dist.get_rank()}")
 
     best_score=inf_score
     # create board dir before training
