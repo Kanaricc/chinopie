@@ -59,7 +59,7 @@ class PhaseEnv:
         if dist.is_main_process():
             if self._do_log_sample:
                 _logger.info("data preview can be found in log")
-            with tqdm(total=batch_len,dynamic_ncols=True,ascii=' >=') as progressbar:
+            with tqdm(total=batch_len,dynamic_ncols=True,ascii=' >=',leave=False) as progressbar:
                 for batchi, data in enumerate(self._dataloader):
                     if self._do_log_sample:
                         # torch.set_printoptions(profile='full')
