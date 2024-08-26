@@ -163,10 +163,12 @@ class MultiClassInMemoryDataset(MultiClassDataset):
 
 
 from .cifar import CIFAR10,CIFAR100
+from .cub200 import Cub200Dataset
 
 __all__=[
     "CIFAR10",
     "CIFAR100",
+    "Cub200Dataset",
     "MultiClassInMemoryDataset",
     "MultiClassSample",
 ]

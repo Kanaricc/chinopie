@@ -1,6 +1,5 @@
 name="chinopie"
 
-import chinopie
 from .bootstrap import TrainBootstrap
 from .modelhelper import ModelStaff,PhaseEnv,HyperparameterManager
 from .recipes import ModuleRecipe,ModelStateKeeper

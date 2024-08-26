@@ -46,4 +46,19 @@ from .multilabel.voc2012 import VOC2012Dataset,get_voc_labels
 from .multilabel.voc2007 import VOC2007Dataset,get_voc_labels
 from .multilabel.nus_wide import NusWideDataset,get_nus_wide_labels
 from .fakeset import FakeConstSet,FakeEmptySet,FakeOutput,FakeRandomSet,FakeNormalSet
-from .multiclass import CIFAR10,CIFAR100
+from .multiclass import CIFAR10,CIFAR100,Cub200Dataset
+
+__all__=[
+    "COCO2014Dataset",
+    "VOC2012Dataset",
+    "VOC2007Dataset",
+    "NusWideDataset",
+    "FakeConstSet",
+    "FakeEmptySet",
+    "FakeOutput",
+    "FakeRandomSet",
+    "FakeNormalSet",
+    "CIFAR10",
+    "CIFAR100",
+    "Cub200Dataset",
+]

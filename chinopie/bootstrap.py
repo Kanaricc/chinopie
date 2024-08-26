@@ -6,6 +6,7 @@ import argparse
 import traceback
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 import warnings
+import signal
 
 
 import torch
@@ -55,7 +56,6 @@ class TrainBootstrap:
         dev="",
         diagnose=False,
         verbose=False,
-        handle_exception:bool=False,
         ddp_timeout:int=60,
     ) -> None:
         argparser=argparse.ArgumentParser(
@@ -101,7 +101,6 @@ class TrainBootstrap:
         self._seed=seed
         self._diagnose_mode = args.diagnose
         self._verbose:bool=args.verbose
-        self._handle_exception=handle_exception
         self._ddp_timeout=ddp_timeout
         self._enable_prune=enable_prune
         self._world_size=args.world_size
@@ -140,11 +139,6 @@ class TrainBootstrap:
             else:
                 logger.info("[BOOTSTRAP] disabled snapshot in diagnose mode")
 
-        # set exception handler
-        if handle_exception:
-            sys.excepthook=exception_handler
-            logger.info("[BOOTSTRAP] enabled exception handler")
-        
         # prepare hyperparameter manager
         self._hp_manager=HyperparameterManager()
         self._inherit_states:Dict[str,Any]={}
@@ -322,28 +316,10 @@ class TrainBootstrap:
                         self._diagnose_mode,
                         self._get_full_study_name(),
                         self._verbose,
-                        self._handle_exception,
                         self._ddp_timeout,
                         q
                     ),nprocs=self._world_size,join=True)
                     qmsg=q.get(block=False)
-                    # _wrapper_train(
-                    #     1,
-                    #     trial,
-                    #     recipe,
-                    #     num_epoch,
-                    #     load_checkpoint,
-                    #     self._save_checkpoint,
-                    #     self._enable_prune,
-                    #     self._checkpoint_save_period,
-                    #     trial_file,
-                    #     prev_file_helpers,
-                    #     direction,
-                    #     inf_score,
-                    #     self._dev,
-                    #     self._diagnose_mode
-                    # )
-
                     # append all params (suggested and fixed) into attrs
                     trial.set_user_attr('params',self._hp_manager.params)
 
@@ -407,13 +383,9 @@ def _wrapper_train(
         diagnose_mode:bool,
         study_comment:str,
         verbose:bool,
-        handle_exception:bool,
         ddp_timeout:int,
         queue:mp.Queue,
     ):
-    if handle_exception and dist.is_main_process():
-        sys.excepthook=exception_handler
-        logger.info("[BOOTSTRAP] enabled exception handler in main rank")
     
     if dev=='cpu':ddp_backend='gloo'
     elif dev=='cuda':ddp_backend='nccl'
@@ -658,8 +630,11 @@ def _init_logger(comment:str,verbose:bool):
         disable_default_handler()
     logger.info("[BOOTSTRAP] initialized logger")
 
+def init_signal_handler():
+    raise NotImplementedError()
+    signal.signal(signal.SIGINT,)
 
-def exception_handler(*args, **kwargs):
+def _exception_handler(*args, **kwargs):
     vs = globals().copy()
     vs.update(locals())
     shell = code.InteractiveConsole(vs)

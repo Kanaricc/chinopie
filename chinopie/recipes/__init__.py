@@ -14,6 +14,7 @@ from chinopie.modelhelper import ModelStaff, PhaseEnv, HyperparameterManager
 
 from .. import logging
 
+
 _logger = logging.get_logger(__name__)
 
 
@@ -390,3 +391,13 @@ class ModelStateKeeper:
         else:
             self._recipe.switch_eval(self._model)
         _logger.debug("restore model training/evaluating status")
+
+
+from .partial_recipe import TrainingRecipe,EvaluationRecipe
+
+__all__=[
+    "TrainingRecipe",
+    "EvaluationRecipe",
+    "ModuleRecipe",
+    "ModelStateKeeper",
+]
