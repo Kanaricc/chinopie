@@ -10,20 +10,22 @@ from .. import iddp as dist
 class SmoothMeanMeter:
     def __init__(self,length:int,level1:float=0.1,level2:float=0.25,level3:float=0.5) -> None:
         assert length>0, "the length should larger than 0"
-        self._levels=[level1*length,level2*length,level3*length]
-        self._decays=[math.pow(1/x,1/x) for x in self._levels]
-        self._norm=[1 for x in self._levels]
-        self._qs=[0 for x in self._levels]
+        self._levels=list(map(int,[level1*length,level2*length,level3*length]))
+        self._nums=[[] for _ in self._levels]
+        self._means=[0.]*len(self._levels)
     
     def add(self,x:float):
-        self._norm=[qs*d+1 for qs,d in zip(self._norm,self._decays)]
-        self._qs=[qs*d+x for qs,d in zip(self._qs,self._decays)]
+        for i in range(len(self._levels)):
+            self._nums[i].append(x)
+            self._means[i]=(self._means[i]*(len(self._nums[i])-1)+x)/len(self._nums[i])
+            if len(self._nums[i])>self._levels[i]:
+                self._means[i]=(self._means[i]*len(self._nums[i])-self._nums[i][0])/(len(self._nums[i])-1)
+                self._nums[i].pop(0)
     
 
     def __str__(self):
         # TODO: sync
-        t=[x/norm for x,norm in zip(self._qs,self._norm)]
-        return ', '.join(map(lambda x: f"{x:.2f}",t))
+        return ', '.join(map(lambda x: f"{x:.2f}",self._means))
 
 class AverageMeter:
     def __init__(self, name: str,dev:Any) -> None:
