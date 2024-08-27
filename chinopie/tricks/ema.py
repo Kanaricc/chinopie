@@ -54,8 +54,8 @@ class ModelEma(Module):
         model: Module,
         ema_model: Module | None = None,             # if your model has lazylinears or other types of non-deepcopyable modules, you can pass in your own ema model
         beta = 0.9999,
-        update_after_step = 1,
-        update_every = 1,
+        update_after_step = 100,
+        update_every = 10,
         inv_gamma = 1.0,
         power = 2 / 3,
         min_value = 0.0,
