@@ -28,7 +28,7 @@ def inplace_lerp(tgt: Tensor, src: Tensor, weight, *, auto_move_device = False):
 
     tgt.lerp_(src, weight)
 
-class EMA(Module):
+class ModelEma(Module):
     """
     Implements exponential moving average shadowing for your model.
 
