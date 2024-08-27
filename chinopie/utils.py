@@ -4,6 +4,7 @@ import copy
 from datetime import datetime
 from typing import Optional
 from typing import Dict,Any,Optional,List
+import warnings
 
 import numpy as np
 import torch
@@ -65,6 +66,7 @@ def set_eval(model:nn.Module):
     _logger.debug("set model as evaluating")
 
 def create_snapshot(comment:Optional[str]=None):
+    _logger.debug("creating git snapshot")
     date=datetime.now().strftime("%Y%m%d%H%M%S")
     branch_name=f"{date}_{comment}"
 
@@ -139,10 +141,12 @@ def any_to(data:Any,device:Any):
     if isinstance(data,Tensor):
         # type fix for mps backend
         if device=='mps' and data.dtype==torch.float64:
+            warnings.warn("mps backend does not support float64. converting to float32")
             data=data.to(torch.float32)
         return data.to(device)
     elif isinstance(data,nn.Module):
         if device=='mps' and data.dtype==torch.float64:
+            warnings.warn("mps backend does not support float64. converting to float32")
             data=data.to(torch.float32)
         return data.to(device)
     elif isinstance(data,(list,tuple)):

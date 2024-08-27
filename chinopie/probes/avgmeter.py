@@ -24,7 +24,6 @@ class SmoothMeanMeter:
     
 
     def __str__(self):
-        # TODO: sync
         return ', '.join(map(lambda x: f"{x:.2f}",self._means))
 
 class AverageMeter:
