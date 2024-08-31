@@ -89,7 +89,8 @@ class MultiLabelLocalDataset(MultiLabelDataset):
     
     def apply_new_labels(self, labels: Tensor):
         assert labels.size(0)==len(self) and labels.size(1)==self._num_labels
-        if labels.dtype==torch.int or labels.dtype==torch.long:
+        # FIXME: this is a quick fix for the case to keep 0 as 0
+        if (labels.dtype==torch.int or labels.dtype==torch.long) and self._negative1==False:
             logger.debug("use list-style annotations to reduce memory usage")
             self._annotations=[[] for _ in range(labels.size(0))]
             for k,v in enumerate(labels):
