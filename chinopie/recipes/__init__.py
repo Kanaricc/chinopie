@@ -4,6 +4,7 @@ from typing import Sequence, Any, Dict, TypeVar, Generic, Optional
 from abc import ABC, abstractmethod
 import torch
 from torch import nn, Tensor
+import torch.amp
 from torch.utils.data import DataLoader
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim import Optimizer
@@ -35,6 +36,8 @@ class ModuleRecipe(ABC):
         self._cur_batch: Optional[int] = None
         self._total_epoch: Optional[int] = None
         self._total_batch: Optional[int] = None
+
+        self.grad_scaler = torch.cuda.amp.GradScaler(enabled=self._autocast)
         pass
 
     def ask_hyperparameter(self, hp: HyperparameterManager):
@@ -199,12 +202,13 @@ class ModuleRecipe(ABC):
 
         if not self._stop_backward:
             self.optimizer.zero_grad()
-            loss.backward()
+            self.grad_scaler.scale(loss).backward()
             if self._clamp_grad is not None:
                 torch.nn.utils.clip_grad.clip_grad_norm_(
                     self.model.parameters(), max_norm=self._clamp_grad
                 )
-            self.optimizer.step()
+            self.grad_scaler.step(self.optimizer)
+            self.grad_scaler.update()
         else:
             warnings.warn("backward is stopped")
 
