@@ -23,11 +23,13 @@ class ModuleRecipe(ABC):
         eval_on_nograd_module: bool = True,
         stop_backward: bool = False,
         autocast: bool = False,
+        scheduler_step_on_batch: bool = False,
     ):
         self._clamp_grad = clamp_grad
         self._eval_on_nograd_module = eval_on_nograd_module
         self._stop_backward = stop_backward
         self._autocast = autocast
+        self._scheduler_step_on_batch = scheduler_step_on_batch
 
         self._cur_epoch: Optional[int] = None
         self._cur_batch: Optional[int] = None
@@ -291,6 +293,9 @@ class ModuleRecipe(ABC):
     def before_iter(self, data): ...
 
     def after_iter_train(self, data, output):
+        # TODO: a proper way to handle scheduler
+        if self.scheduler is not None and self._scheduler_step_on_batch:
+            self.scheduler.step()
         self.after_iter(data, output, "train")
 
     def after_iter_val(self, data, output):
@@ -361,7 +366,7 @@ class ModuleRecipe(ABC):
         """
         do schedular task here
         """
-        if self.scheduler is not None:
+        if self.scheduler is not None and self._scheduler_step_on_batch==False:
             self.scheduler.step()
 
 

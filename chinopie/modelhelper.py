@@ -218,10 +218,9 @@ class ModelStaff:
             warnings.warn("DistributedSampler is used for testloader, of which the behavior may lead to incorrect metrics when #batch is not divisible by #gpu.")
     
     def reg_model(self,model:nn.Module):
-        self._model=model
+        self._model=model.to(self.dev)
     
     def prepare(self,rank:int):
-        self._model=self._model.to(self.dev)
         self._raw_model=self._model
         if self.dev!='cpu':
             self._model=nn.parallel.DistributedDataParallel(self._model,device_ids=[rank],find_unused_parameters=self._diagnose)
