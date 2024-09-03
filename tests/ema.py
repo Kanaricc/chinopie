@@ -1,5 +1,7 @@
 import sys
 from typing import Dict
+
+from chinopie.tricks.ema import ModelEma
 sys.path.append('..')
 import torch
 from torch import Tensor
@@ -41,6 +43,8 @@ class Recipe2(ModuleRecipe):
 
         model=Model()
         staff.reg_model(model)
+        
+        self.ema=ModelEma(self.model)
     
     def set_optimizers(self, model) -> Optimizer:
         return torch.optim.AdamW(model.parameters(),lr=self.lr)
@@ -50,6 +54,12 @@ class Recipe2(ModuleRecipe):
     
     def forward(self, data) -> Tensor:
         return self.model(data['input'])
+    
+    def forward_val(self, data):
+        return self.ema(data['input'])
+    
+    def after_iter_train(self, data, output):
+        self.ema.update()
     
     def cal_loss(self, data, output) -> Tensor:
         return F.l1_loss(output,data['target'])
