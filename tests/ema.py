@@ -1,5 +1,5 @@
 import sys
-from typing import Dict
+from typing import Any, Dict
 
 from chinopie.tricks.ema import ModelEma
 sys.path.append('..')
@@ -66,6 +66,14 @@ class Recipe2(ModuleRecipe):
     
     def report_score(self, phase: str) -> float:
         return 0.0
+    
+    def export_custom_state(self):
+        return {
+            'ema':self.ema.state_dict(),
+        }
+    
+    def import_custom_state(self, state: Dict[str, Any]):
+        self.ema.load_state_dict(state['ema'])
 
 
 if __name__=="__main__":
