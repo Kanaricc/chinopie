@@ -202,14 +202,17 @@ class ModuleRecipe(ABC):
         p.update_loss(loss.detach().cpu())
 
         if not self._stop_backward:
-            self.optimizer.zero_grad()
-            self.grad_scaler.scale(loss).backward()
-            if self._clamp_grad is not None:
-                torch.nn.utils.clip_grad.clip_grad_norm_(
-                    self.model.parameters(), max_norm=self._clamp_grad
-                )
-            self.grad_scaler.step(self.optimizer)
-            self.grad_scaler.update()
+            if p.validate_loss(loss):
+                self.optimizer.zero_grad()
+                self.grad_scaler.scale(loss).backward()
+                if self._clamp_grad is not None:
+                    torch.nn.utils.clip_grad.clip_grad_norm_(
+                        self.model.parameters(), max_norm=self._clamp_grad
+                    )
+                self.grad_scaler.step(self.optimizer)
+                self.grad_scaler.update()
+            else:
+                _logger.warning(f"training loss is `nan`, ignoring this step.")
         else:
             warnings.warn("backward is stopped")
 

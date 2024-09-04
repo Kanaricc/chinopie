@@ -78,7 +78,7 @@ class PhaseEnv:
                 yield batchi, data
                 if self._dry_run and batchi>=2:
                     break
-    
+
     def _check_update(self):
         if self._do_check_score and not self._score_updated:
             _logger.error(f"no score updated during phase {self._phase_name}")
@@ -103,7 +103,7 @@ class PhaseEnv:
 
     def update_loss(self, loss: Tensor, n: int = 1):
         self._loss_updated = True
-        self.validate_loss(loss)
+        self.validate_loss(loss,panic=False)
         self._loss_probe.update(loss.item(), n)
         self._realtime_loss_probe.add(loss.item())
 
