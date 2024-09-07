@@ -29,10 +29,10 @@ class SmoothMeanMeter:
 class AverageMeter:
     def __init__(self, name: str,dev:Any) -> None:
         self.name = name
-        self._val = 0
-        self._sum = 0
-        self._cnt = 0
-        self._avg=0
+        self._val = 0.
+        self._sum = 0.
+        self._cnt = 0.
+        self._avg=0.
         self._dev=dev
         pass
 

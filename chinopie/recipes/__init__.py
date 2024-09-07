@@ -199,10 +199,10 @@ class ModuleRecipe(ABC):
         with torch.autocast(device_type=self.dev_class, enabled=self._autocast):
             output = self.forward_train(dev_data)
             loss = self.cal_loss_train(dev_data, output)
-        p.update_loss(loss.detach().cpu())
 
-        if not self._stop_backward:
-            if p.validate_loss(loss):
+        if p.validate_loss(loss, panic=False):
+            p.update_loss(loss.detach().cpu())
+            if not self._stop_backward:
                 self.optimizer.zero_grad()
                 self.grad_scaler.scale(loss).backward()
                 if self._clamp_grad is not None:
@@ -212,9 +212,10 @@ class ModuleRecipe(ABC):
                 self.grad_scaler.step(self.optimizer)
                 self.grad_scaler.update()
             else:
-                _logger.warning(f"training loss is `nan`, ignoring this step.")
+                warnings.warn("backward is stopped")
         else:
-            warnings.warn("backward is stopped")
+            _logger.warning(f"training loss is `nan`, ignoring this step.")
+
 
         output_cpu = chinopie.any_to(output, "cpu")
         self.update_probe_train(data, output_cpu, p)
