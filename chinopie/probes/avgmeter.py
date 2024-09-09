@@ -51,9 +51,9 @@ class AverageMeter:
             x=self._avg
             return x
         else:
-            x=torch.tensor(self._avg,device=self._dev)
+            x=torch.tensor(self._avg,device=self._dev,dtype=torch.float)
             dist.all_reduce(x,op=dist.ReduceOp.SUM)
-            x/=dist.get_world_size()
+            x/=float(dist.get_world_size())
             return x.item() # type: ignore
 
     def value(self) -> Number:
