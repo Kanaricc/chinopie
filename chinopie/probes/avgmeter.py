@@ -7,20 +7,24 @@ from torch.types import Number
 from collections import deque
 from .. import iddp as dist
 
+"""
+m=(a1+a2+a3+...+a_{n-1})/(n-1)
+m'=(a1+a2+a3+...+a_{n-1}+an)/n
+  =(mn-m+an)/n
+  =m+(an-m)/n
+"""
+
 class SmoothMeanMeter:
     def __init__(self,length:int,level1:float=0.1,level2:float=0.25,level3:float=0.5) -> None:
         assert length>0, "the length should larger than 0"
         self._levels=list(map(int,[level1*length,level2*length,level3*length]))
-        self._nums=[[] for _ in self._levels]
         self._means=[0.]*len(self._levels)
+        self._cnt=[0]*len(self._levels)
     
     def add(self,x:float):
         for i in range(len(self._levels)):
-            self._nums[i].append(x)
-            self._means[i]=(self._means[i]*(len(self._nums[i])-1)+x)/len(self._nums[i])
-            if len(self._nums[i])>self._levels[i]:
-                self._means[i]=(self._means[i]*len(self._nums[i])-self._nums[i][0])/(len(self._nums[i])-1)
-                self._nums[i].pop(0)
+            self._cnt[i]+=1
+            self._means[i]=self._means[i]+(x-self._means[i])/self._cnt[i]
     
 
     def __str__(self):
