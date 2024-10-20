@@ -7,7 +7,7 @@ import traceback
 from typing import Any, Callable, Dict, List, Optional, Sequence, Union
 import warnings
 import signal
-
+import requests
 
 import torch
 import torch.backends.mps
@@ -57,6 +57,7 @@ class TrainBootstrap:
         diagnose=False,
         verbose=False,
         ddp_timeout:int=60,
+        progress_alert_url:str="",
     ) -> None:
         argparser=argparse.ArgumentParser(
             prog='ChinoPie'
@@ -105,6 +106,7 @@ class TrainBootstrap:
         self._enable_prune=enable_prune
         self._world_size=args.world_size
         self._clear=args.clear
+        self._progress_alert_url=progress_alert_url
 
         _init_logger(self._get_full_study_name(),self._verbose)
 
@@ -335,6 +337,8 @@ class TrainBootstrap:
                     # catch other exceptions and set the study as incomplete
                     logger.error(f"[BOOTSTRAP][`{stage_comment}`] catched exception and stop this trial:\n{traceback.format_exc()}")
                     study.tell(trial,state=optuna.trial.TrialState.FAIL)
+                    if self._progress_alert_url !="":
+                        _alert_progress(self._progress_alert_url,f"{stage_comment} failed")
                     raise e
                 gc.collect()
         finally:
@@ -357,6 +361,8 @@ class TrainBootstrap:
                 shutil.copytree(best_file.default_board_dir,target_helper.default_board_dir,dirs_exist_ok=True)
                 shutil.copytree(best_file.ckpt_dir,target_helper.ckpt_dir,dirs_exist_ok=True)
                 logger.info("[BOOTSTRAP] copied best trial as the final result")
+                if self._progress_alert_url !="":
+                    _alert_progress(self._progress_alert_url,f"{stage_comment} finished")
             else:
                 logger.warning("[BOOTSTRAP] no trials are completed")
         
@@ -641,3 +647,10 @@ def _exception_handler(*args, **kwargs):
     sys.__excepthook__(*args, **kwargs)
     shell.interact()
     return
+
+def _alert_progress(url:str, message:str):
+    method,key=url.split(':')
+    if method=='serverchan':
+        requests.get(f"https://sctapi.ftqq.com/{key}.send?title={message}")
+    else:
+        raise NotImplementedError(f"unknown alert method `{method}`")
