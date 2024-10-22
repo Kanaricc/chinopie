@@ -58,6 +58,7 @@ class TrainBootstrap:
         verbose=False,
         ddp_timeout:int=60,
         progress_alert_url:str="",
+        ddp_port:int=29500,
     ) -> None:
         argparser=argparse.ArgumentParser(
             prog='ChinoPie'
@@ -73,6 +74,7 @@ class TrainBootstrap:
         argparser.add_argument('--dev',type=str,default=dev)
         argparser.add_argument('-d','--diagnose',action='store_true',default=diagnose)
         argparser.add_argument('-v','--verbose',action='store_true',default=verbose)
+        argparser.add_argument('--port',type=int,default=ddp_port)
         argparser.add_argument('--clear',action='store_true',default=False)
         args,self._extra_arg_str=argparser.parse_known_args()
 
@@ -107,6 +109,7 @@ class TrainBootstrap:
         self._world_size=args.world_size
         self._clear=args.clear
         self._progress_alert_url=progress_alert_url
+        self._ddp_port=args.port
 
         _init_logger(self._get_full_study_name(),self._verbose)
 
@@ -114,7 +117,7 @@ class TrainBootstrap:
 
         # set ddp
         os.environ["MASTER_ADDR"] = "localhost"
-        os.environ["MASTER_PORT"] = "29500"
+        os.environ["MASTER_PORT"] = f"{self._ddp_port}"
 
         # set prune
         if self._enable_prune:
@@ -395,6 +398,7 @@ def _wrapper_train(
     
     if dev=='cpu':ddp_backend='gloo'
     elif dev=='cuda':ddp_backend='nccl'
+    elif dev=='mps': ddp_backend='gloo'
     else:
         raise NotImplementedError(f"don't know what backend to use for device `{dev}`")
     
