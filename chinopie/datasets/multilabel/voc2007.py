@@ -173,7 +173,7 @@ def prepare_voc07(root: str,ignore_difficult_label:bool=True):
         _logger.warning("done")
 
 class VOC2007Dataset(MultiLabelLocalDataset):
-    def __init__(self, root:str,phase:str,preprocess:Any,extra_preprocess=None,negatives_as_neg1=False) -> None:
+    def __init__(self, root:str,phase:str,preprocess:Any,extra_preprocess=None,negatives_as_neg1=False,prepreprocess=None) -> None:
         assert phase in ["train","val","trainval","test"]
         prepare_voc07(root)
 
@@ -193,4 +193,4 @@ class VOC2007Dataset(MultiLabelLocalDataset):
         annotation_labels=get_voc_labels()
 
 
-        super().__init__(img_paths, num_labels, annotations, annotation_labels, preprocess, extra_preprocess, negatives_as_neg1)
+        super().__init__(img_paths, num_labels, annotations, annotation_labels, preprocess, extra_preprocess, negatives_as_neg1,prepreprocess)

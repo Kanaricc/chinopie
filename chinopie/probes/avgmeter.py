@@ -50,7 +50,7 @@ class AverageMeter:
     def has_data(self):
         return self._cnt!=0
 
-    def average(self) -> Optional[float]:
+    def average(self) -> float:
         if not dist.is_initialized():
             x=self._avg
             return x

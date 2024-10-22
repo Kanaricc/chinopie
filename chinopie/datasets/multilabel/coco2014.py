@@ -162,7 +162,7 @@ def _get_preprocess(phase:str):
         ])
 
 class COCO2014Dataset(MultiLabelLocalDataset):
-    def __init__(self,root:str,phase:str,preprocess:Optional[Any],extra_preprocess:Optional[Any]=None,negatives_as_neg1=False) -> None:
+    def __init__(self,root:str,phase:str,preprocess:Optional[Any],extra_preprocess:Optional[Any]=None,negatives_as_neg1=False,prepreprocess=None) -> None:
         assert phase in ['train', 'val']
         self.root = os.path.abspath(root)
         self.phase = phase
@@ -181,7 +181,7 @@ class COCO2014Dataset(MultiLabelLocalDataset):
         if preprocess==None:
             preprocess=_get_preprocess(phase)
 
-        super().__init__(img_paths, num_labels, annotations, annotation_labels, preprocess, extra_preprocess, negatives_as_neg1)
+        super().__init__(img_paths, num_labels, annotations, annotation_labels, preprocess, extra_preprocess, negatives_as_neg1,prepreprocess)
     
 
     def load_annotation(self):

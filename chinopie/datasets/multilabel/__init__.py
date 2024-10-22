@@ -41,7 +41,7 @@ class MultiLabelDataset(abc.ABC,Dataset[MultiLabelSample]):
         ...
 
 class MultiLabelLocalDataset(MultiLabelDataset):
-    def __init__(self, img_paths:List[str],num_labels:int, annotations:List[List[int]] | Tensor,annotation_labels:List[str], preprocess: Any,extra_preprocess:Optional[Any], negatives_as_neg1=False) -> None:
+    def __init__(self, img_paths:List[str],num_labels:int, annotations:List[List[int]] | Tensor,annotation_labels:List[str], preprocess: Any,extra_preprocess:Optional[Any], negatives_as_neg1=False,prepreprocess:Any=None) -> None:
         assert len(img_paths)==len(annotations)
 
         self._img_paths=img_paths
@@ -49,6 +49,7 @@ class MultiLabelLocalDataset(MultiLabelDataset):
         self._annotations=annotations
         self._annotation_labels=annotation_labels
         self._negative1=negatives_as_neg1
+        self._prepreprocess=prepreprocess
         self._preprocess=preprocess
         self._extra_preprocess=extra_preprocess
     
@@ -128,6 +129,8 @@ class MultiLabelLocalDataset(MultiLabelDataset):
         rgb_image=Image.open(path).convert(
                 "RGB"
             )
+        if self._prepreprocess:
+            rgb_image=self._prepreprocess(rgb_image)
         image = self._preprocess(rgb_image)
         extra_image= self._extra_preprocess(rgb_image) if self._extra_preprocess else None
         rgb_image.close()
