@@ -82,6 +82,16 @@ class HyperparameterManager:
     ) -> CategoricalChoiceType:
         assert name in self._arg_config, f"request for unregisted param `{name}`"
         fixed_val = self._arg_config[name]
+        assert fixed_val is not None
+        if type(choices[0])==int:
+            fixed_val=int(fixed_val)
+        elif type(choices[0])==float:
+            fixed_val=float(fixed_val)
+        elif type(choices[0])==bool:
+            fixed_val=fixed_val in ['True','true','1']
+        else:
+            pass # str
+            
         if fixed_val is not None:
             assert fixed_val in choices
             logger.debug(f"using fixed param `{name}`")
