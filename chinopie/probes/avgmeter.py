@@ -63,11 +63,11 @@ class AverageMeter:
     def value(self) -> Number:
         return self._val
     
-    def reset(self):
-        self._val=0
-        self._sum=0
-        self._cnt=0
-        self._avg=0
+    def reset(self,val:Number=0,cnt:int=0):
+        self._val=val
+        self._sum=val*cnt
+        self._cnt=cnt
+        self._avg=val
         
     def __str__(self) -> str:
         return f"{self.name}: {self.value():.5f}(avg {self.average():.5f})"

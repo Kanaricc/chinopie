@@ -402,7 +402,7 @@ def _wrapper_train(
     else:
         raise NotImplementedError(f"don't know what backend to use for device `{dev}`")
     
-    dist.init_process_group(ddp_backend,rank=rank,world_size=world_size,timeout=timedelta(seconds=ddp_timeout))
+    dist.init_process_group(ddp_backend,rank=rank,world_size=world_size,timeout=timedelta(seconds=ddp_timeout),device_id=f"cuda:{rank}")
     if dev=='cuda':
         torch.cuda.set_device(rank) # for some sync ops
     

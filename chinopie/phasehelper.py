@@ -92,6 +92,11 @@ class PhaseEnv:
         if name in self._custom_probe_name:
             self._custom_probe_name.remove(name)
         self._custom_probes[name].update(value, n)
+    
+    def reset_probe(self, name: str,value:float,n:int=1):
+        if name in self._custom_probe_name:
+            self._custom_probe_name.remove(name)
+        self._custom_probes[name].reset(value,n)
 
     @staticmethod
     def validate_loss(loss: Tensor, panic: bool = True) -> bool:
