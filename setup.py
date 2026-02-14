@@ -18,5 +18,6 @@ setuptools.setup(
         "tqdm",
         "optuna",
         "numpy",
+        "tensorboard",
     ]
 )
